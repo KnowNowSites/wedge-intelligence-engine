@@ -1,0 +1,54 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    container_name: wie-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      - DATABASE_PATH=/app/data/wie.db
+      - LOG_LEVEL=INFO
+      - SCHEDULER_ENABLED=true
+    env_file:
+      - .env
+    command: python backend/main.py
+    networks:
+      - wie-network
+    depends_on:
+      - db
+
+  frontend:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: wie-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_API_URL=http://backend:8000
+    networks:
+      - wie-network
+    depends_on:
+      - backend
+
+  db:
+    image: sqlite:latest
+    container_name: wie-db
+    volumes:
+      - ./data:/data
+    networks:
+      - wie-network
+
+networks:
+  wie-network:
+    driver: bridge
+
+volumes:
+  data:
+  logs:

@@ -5,12 +5,20 @@ import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
+import Dashboard from "./pages/Dashboard";
+import WedgeDetail from "./pages/WedgeDetail";
+import SignalExplorer from "./pages/SignalExplorer";
+import Watchlist from "./pages/Watchlist";
+import Navigation from "./components/Navigation";
 
 function Router() {
   // make sure to consider if you need authentication for certain routes
   return (
     <Switch>
-      <Route path={"/"} component={Home} />
+      <Route path={"/"} component={Dashboard} />
+      <Route path={"/wedge/:id"} component={WedgeDetail} />
+      <Route path={"/signals"} component={SignalExplorer} />
+      <Route path={"/watchlist"} component={Watchlist} />
       <Route path={"/404"} component={NotFound} />
       {/* Final fallback route */}
       <Route component={NotFound} />
@@ -32,6 +40,7 @@ function App() {
       >
         <TooltipProvider>
           <Toaster />
+          <Navigation />
           <Router />
         </TooltipProvider>
       </ThemeProvider>
