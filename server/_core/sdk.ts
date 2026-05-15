@@ -321,7 +321,7 @@ export type AuthenticatedUser = User & {
 function buildCronUser(
   userInfo: GetUserInfoWithJwtResponse
 ): AuthenticatedUser {
-  const now = new Date();
+  const now = new Date().toISOString();
   return {
     id: -1,
     openId: userInfo.openId,

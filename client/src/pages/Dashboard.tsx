@@ -1,4 +1,3 @@
-import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -10,8 +9,10 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { TrendingUp, Search, Filter } from "lucide-react";
+import { TrendingUp, Search, Filter, Loader2 } from "lucide-react";
 import { useLocation } from "wouter";
+import { trpc } from "@/lib/trpc";
+import { useMemo, useState } from "react";
 
 interface Wedge {
   id: string;
@@ -26,55 +27,6 @@ interface Wedge {
   };
 }
 
-// Mock data - replace with tRPC query
-const MOCK_WEDGES: Wedge[] = [
-  {
-    id: "1",
-    wedge_name: "Construction Permit Automation",
-    wedge_score: 8.5,
-    detector_source: "pain_signal",
-    enterprise_value: "high",
-    complexity: "medium",
-    mrr_timeline: { to_10k_mrr_months: 6, to_100k_mrr_months: 18 },
-  },
-  {
-    id: "2",
-    wedge_name: "Healthcare Compliance Software",
-    wedge_score: 8.2,
-    detector_source: "regulation_change",
-    enterprise_value: "very_high",
-    complexity: "high",
-    mrr_timeline: { to_10k_mrr_months: 9, to_100k_mrr_months: 24 },
-  },
-  {
-    id: "3",
-    wedge_name: "Logistics Optimization",
-    wedge_score: 7.9,
-    detector_source: "margin_expansion",
-    enterprise_value: "high",
-    complexity: "medium",
-    mrr_timeline: { to_10k_mrr_months: 8, to_100k_mrr_months: 20 },
-  },
-  {
-    id: "4",
-    wedge_name: "Real Estate Valuation API",
-    wedge_score: 7.5,
-    detector_source: "distribution_gap",
-    enterprise_value: "medium",
-    complexity: "low",
-    mrr_timeline: { to_10k_mrr_months: 4, to_100k_mrr_months: 14 },
-  },
-  {
-    id: "5",
-    wedge_name: "Emerging Market SaaS",
-    wedge_score: 7.2,
-    detector_source: "geographic_wedge",
-    enterprise_value: "medium",
-    complexity: "medium",
-    mrr_timeline: { to_10k_mrr_months: 7, to_100k_mrr_months: 19 },
-  },
-];
-
 export default function Dashboard() {
   const [, navigate] = useLocation();
   const [searchTerm, setSearchTerm] = useState("");
@@ -82,42 +34,21 @@ export default function Dashboard() {
   const [filterDetector, setFilterDetector] = useState<string>("all");
   const [filterComplexity, setFilterComplexity] = useState<string>("all");
 
+  // Fetch real data from tRPC
+  const { data, isLoading, error } = trpc.wedges.list.useQuery({
+    search: searchTerm || undefined,
+    detector: filterDetector === "all" ? undefined : filterDetector,
+    complexity: filterComplexity === "all" ? undefined : filterComplexity,
+  });
+
+  const wedges = data?.wedges || [];
+
   const filteredAndSortedWedges = useMemo(() => {
-    let filtered = MOCK_WEDGES.filter((wedge) => {
-      const matchesSearch =
-        wedge.wedge_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        wedge.detector_source.toLowerCase().includes(searchTerm.toLowerCase());
-
-      const matchesDetector =
-        filterDetector === "all" || wedge.detector_source === filterDetector;
-
-      const matchesComplexity =
-        filterComplexity === "all" || wedge.complexity === filterComplexity;
-
-      return matchesSearch && matchesDetector && matchesComplexity;
-    });
-
-    // Sort
-    filtered.sort((a, b) => {
-      if (sortBy === "score") {
-        return b.wedge_score - a.wedge_score;
-      } else if (sortBy === "mrr") {
-        return a.mrr_timeline.to_10k_mrr_months - b.mrr_timeline.to_10k_mrr_months;
-      } else if (sortBy === "value") {
-        const valueOrder = { low: 1, medium: 2, high: 3, very_high: 4 };
-        return (
-          (valueOrder[b.enterprise_value as keyof typeof valueOrder] || 0) -
-          (valueOrder[a.enterprise_value as keyof typeof valueOrder] || 0)
-        );
-      }
-      return 0;
-    });
-
-    return filtered;
-  }, [searchTerm, sortBy, filterDetector, filterComplexity]);
+    return wedges;
+  }, [wedges]);
 
   const detectors = Array.from(
-    new Set(MOCK_WEDGES.map((w) => w.detector_source))
+    new Set(wedges.map((w: any) => w.detector))
   );
 
   const getScoreBadgeColor = (score: number) => {
@@ -129,13 +60,28 @@ export default function Dashboard() {
   const getComplexityColor = (complexity: string) => {
     switch (complexity) {
       case "low":
-        return "bg-green-50 border-green-200";
+        return "bg-green-50 text-green-700 border border-green-200";
       case "medium":
-        return "bg-yellow-50 border-yellow-200";
+        return "bg-yellow-50 text-yellow-700 border border-yellow-200";
       case "high":
-        return "bg-red-50 border-red-200";
+        return "bg-red-50 text-red-700 border border-red-200";
       default:
-        return "bg-gray-50 border-gray-200";
+        return "bg-slate-50 text-slate-700 border border-slate-200";
+    }
+  };
+
+  const getValueColor = (value: string) => {
+    switch (value) {
+      case "low":
+        return "text-slate-600";
+      case "medium":
+        return "text-blue-600";
+      case "high":
+        return "text-green-600";
+      case "very_high":
+        return "text-emerald-600";
+      default:
+        return "text-slate-600";
     }
   };
 
@@ -144,35 +90,31 @@ export default function Dashboard() {
       <div className="max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
-          <div className="flex items-center gap-2 mb-2">
+          <div className="flex items-center gap-3 mb-2">
             <TrendingUp className="w-8 h-8 text-blue-600" />
             <h1 className="text-4xl font-bold text-slate-900">Wedge Intelligence</h1>
           </div>
-          <p className="text-slate-600">
-            Discover untapped market opportunities ranked by potential and timing
-          </p>
+          <p className="text-lg text-slate-600">Discover untapped market opportunities ranked by potential and timing</p>
         </div>
 
-        {/* Search & Filters */}
+        {/* Filters */}
         <div className="bg-white rounded-lg shadow-sm p-6 mb-8 border border-slate-200">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* Search */}
-            <div className="lg:col-span-2">
-              <div className="relative">
-                <Search className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
-                <Input
-                  placeholder="Search wedges..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
+            <div className="relative">
+              <Search className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
+              <Input
+                placeholder="Search wedges..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
             </div>
 
             {/* Sort */}
-            <Select value={sortBy} onValueChange={(v) => setSortBy(v as any)}>
+            <Select value={sortBy} onValueChange={(value) => setSortBy(value as any)}>
               <SelectTrigger>
-                <SelectValue placeholder="Sort by..." />
+                <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="score">Highest Score</SelectItem>
@@ -184,13 +126,13 @@ export default function Dashboard() {
             {/* Detector Filter */}
             <Select value={filterDetector} onValueChange={setFilterDetector}>
               <SelectTrigger>
-                <SelectValue placeholder="All detectors" />
+                <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Detectors</SelectItem>
-                {detectors.map((d) => (
-                  <SelectItem key={d} value={d}>
-                    {d.replace(/_/g, " ")}
+                {detectors.map((detector: any) => (
+                  <SelectItem key={String(detector)} value={String(detector)}>
+                    {String(detector).replace(/_/g, " ")}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -199,7 +141,7 @@ export default function Dashboard() {
             {/* Complexity Filter */}
             <Select value={filterComplexity} onValueChange={setFilterComplexity}>
               <SelectTrigger>
-                <SelectValue placeholder="All complexity" />
+                <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Complexity</SelectItem>
@@ -211,93 +153,95 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Results Count */}
-        <div className="mb-4 text-sm text-slate-600">
-          Showing {filteredAndSortedWedges.length} of {MOCK_WEDGES.length} wedges
-        </div>
+        {/* Results */}
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center py-12">
+            <Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-3" />
+            <p className="text-slate-600">Loading wedges...</p>
+          </div>
+        ) : error ? (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-red-800">
+            <p className="font-semibold">Error loading wedges</p>
+            <p className="text-sm mt-1">{error.message}</p>
+          </div>
+        ) : filteredAndSortedWedges.length === 0 ? (
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-12 text-center">
+            <p className="text-slate-600 text-lg">No wedges found matching your filters</p>
+            <p className="text-slate-500 text-sm mt-2">Try adjusting your search or filters</p>
+          </div>
+        ) : (
+          <>
+            <p className="text-slate-600 mb-4">Showing {filteredAndSortedWedges.length} of {wedges.length} wedges</p>
 
-        {/* Wedge Cards Grid */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredAndSortedWedges.map((wedge) => (
-            <Card
-              key={wedge.id}
-              className={`cursor-pointer transition-all hover:shadow-lg hover:scale-105 border-l-4 ${getComplexityColor(
-                wedge.complexity
-              )}`}
-              onClick={() => navigate(`/wedge/${wedge.id}`)}
-            >
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex-1">
-                    <CardTitle className="text-lg line-clamp-2">
-                      {wedge.wedge_name}
-                    </CardTitle>
-                    <CardDescription className="text-xs mt-1">
-                      {wedge.detector_source.replace(/_/g, " ")}
-                    </CardDescription>
-                  </div>
-                  <Badge className={getScoreBadgeColor(wedge.wedge_score)}>
-                    {wedge.wedge_score.toFixed(1)}
-                  </Badge>
-                </div>
-              </CardHeader>
-
-              <CardContent>
-                <div className="space-y-3">
-                  {/* Metrics Grid */}
-                  <div className="grid grid-cols-2 gap-2 text-sm">
-                    <div className="bg-white rounded p-2">
-                      <div className="text-xs text-slate-500 font-medium">
-                        To $10k MRR
+            {/* Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {filteredAndSortedWedges.map((wedge: Wedge) => (
+                <Card
+                  key={wedge.id}
+                  className={`cursor-pointer hover:shadow-lg transition-all border-l-4 ${
+                    wedge.detector_source === "pain_signal"
+                      ? "border-l-yellow-400"
+                      : wedge.detector_source === "regulation_change"
+                      ? "border-l-red-400"
+                      : wedge.detector_source === "margin_expansion"
+                      ? "border-l-green-400"
+                      : "border-l-blue-400"
+                  }`}
+                  onClick={() => navigate(`/wedge/${wedge.id}`)}
+                >
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <CardTitle className="text-lg">{wedge.wedge_name}</CardTitle>
+                        <CardDescription className="capitalize text-xs mt-1">
+                          {wedge.detector_source.replace(/_/g, " ")}
+                        </CardDescription>
                       </div>
-                      <div className="text-lg font-bold text-slate-900">
-                        {wedge.mrr_timeline.to_10k_mrr_months}mo
+                      <Badge className={`${getScoreBadgeColor(wedge.wedge_score)} text-sm font-bold`}>
+                        {wedge.wedge_score.toFixed(1)}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+
+                  <CardContent className="space-y-4">
+                    {/* Metrics Grid */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <p className="text-xs text-slate-500 font-semibold">To $10k MRR</p>
+                        <p className="text-lg font-bold text-slate-900">{wedge.mrr_timeline.to_10k_mrr_months}mo</p>
+                      </div>
+                      <div>
+                        <p className="text-xs text-slate-500 font-semibold">Enterprise Value</p>
+                        <p className={`text-lg font-bold capitalize ${getValueColor(wedge.enterprise_value)}`}>
+                          {wedge.enterprise_value}
+                        </p>
                       </div>
                     </div>
-                    <div className="bg-white rounded p-2">
-                      <div className="text-xs text-slate-500 font-medium">
-                        Enterprise Value
-                      </div>
-                      <div className="text-lg font-bold text-slate-900 capitalize">
-                        {wedge.enterprise_value.replace(/_/g, " ")}
-                      </div>
+
+                    {/* Complexity Badge */}
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-slate-600">Complexity</span>
+                      <Badge variant="outline" className={`capitalize ${getComplexityColor(wedge.complexity)}`}>
+                        {wedge.complexity}
+                      </Badge>
                     </div>
-                  </div>
 
-                  {/* Badges */}
-                  <div className="flex flex-wrap gap-1">
-                    <Badge variant="outline" className="text-xs">
-                      {wedge.complexity} complexity
-                    </Badge>
-                    <Badge variant="secondary" className="text-xs">
-                      {wedge.mrr_timeline.to_100k_mrr_months}mo to $100k
-                    </Badge>
-                  </div>
+                    {/* MRR Range */}
+                    <div className="text-xs text-slate-600 border-t pt-3">
+                      <p>
+                        {wedge.mrr_timeline.to_10k_mrr_months}mo to $10k • {wedge.mrr_timeline.to_100k_mrr_months}mo to $100k
+                      </p>
+                    </div>
 
-                  {/* CTA */}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="w-full mt-2"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      navigate(`/wedge/${wedge.id}`);
-                    }}
-                  >
-                    View Details →
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
-        {/* Empty State */}
-        {filteredAndSortedWedges.length === 0 && (
-          <Card className="text-center py-12">
-            <Filter className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-            <p className="text-slate-600">No wedges match your filters</p>
-          </Card>
+                    {/* CTA */}
+                    <Button className="w-full mt-2" variant="default" size="sm">
+                      View Details →
+                    </Button>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </>
         )}
       </div>
     </div>

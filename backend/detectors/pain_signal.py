@@ -44,10 +44,10 @@ def detect_pain_signals() -> list[dict]:
     try:
         # Query 1-2 star app store reviews
         cursor.execute("""
-            SELECT app_name, review_text, rating, date_scraped
+            SELECT app_name, review_text, rating, scraped_at
             FROM app_store_reviews
             WHERE rating <= 2 AND review_text IS NOT NULL
-            ORDER BY date_scraped DESC
+            ORDER BY scraped_at DESC
             LIMIT 500
         """)
         
@@ -65,10 +65,10 @@ def detect_pain_signals() -> list[dict]:
         
         # Query 1-2 star play store reviews
         cursor.execute("""
-            SELECT app_name, review_text, rating, date_scraped
+            SELECT app_name, review_text, rating, scraped_at
             FROM play_store_reviews
             WHERE rating <= 2 AND review_text IS NOT NULL
-            ORDER BY date_scraped DESC
+            ORDER BY scraped_at DESC
             LIMIT 500
         """)
         
@@ -86,10 +86,10 @@ def detect_pain_signals() -> list[dict]:
         
         # Query Reddit posts with pain keywords
         cursor.execute("""
-            SELECT subreddit, post_title, post_body, upvotes, date_scraped
+            SELECT subreddit, title, content, score, scraped_at
             FROM reddit_posts
-            WHERE (post_title LIKE ? OR post_body LIKE ?)
-            ORDER BY date_scraped DESC
+            WHERE (title LIKE ? OR content LIKE ?)
+            ORDER BY scraped_at DESC
             LIMIT 300
         """, ("%pain%", "%pain%"))
         
@@ -111,10 +111,10 @@ def detect_pain_signals() -> list[dict]:
         
         # Query HN posts with pain keywords
         cursor.execute("""
-            SELECT title, comment_text, score, thread_type, date_scraped
+            SELECT title, comment_text, score, thread_type, date_posted
             FROM hn_posts
             WHERE (title LIKE ? OR comment_text LIKE ?)
-            ORDER BY date_scraped DESC
+            ORDER BY date_posted DESC
             LIMIT 300
         """, ("%pain%", "%pain%"))
         

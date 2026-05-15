@@ -1,4 +1,3 @@
-import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -10,8 +9,9 @@ import {
 } from "@/components/ui/select";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Search, ExternalLink } from "lucide-react";
+import { Search, ExternalLink, Loader2 } from "lucide-react";
+import { trpc } from "@/lib/trpc";
+import { useMemo, useState } from "react";
 
 interface Signal {
   id: string;
@@ -19,77 +19,11 @@ interface Signal {
   type: string;
   title: string;
   description: string;
-  date: string;
   score: number;
-  url?: string;
+  url: string;
   metadata: Record<string, any>;
+  created_at: string;
 }
-
-// Mock data
-const MOCK_SIGNALS: Signal[] = [
-  {
-    id: "1",
-    source: "reddit",
-    type: "pain_signal",
-    title: "Permit process is completely manual",
-    description: "User frustrated with 6-month manual permit approval process",
-    date: "2024-05-10",
-    score: 9.2,
-    url: "https://reddit.com/r/construction/...",
-    metadata: { subreddit: "r/construction", upvotes: 234 },
-  },
-  {
-    id: "2",
-    source: "hackernews",
-    type: "pain_signal",
-    title: "Why doesn't someone build a permit automation tool?",
-    description: "HN discussion about lack of permit automation software",
-    date: "2024-05-09",
-    score: 8.7,
-    url: "https://news.ycombinator.com/item?id=...",
-    metadata: { thread_type: "ask_hn", score: 156 },
-  },
-  {
-    id: "3",
-    source: "app_store",
-    type: "incumbent_weakness",
-    title: "Competitor app has terrible UX",
-    description: "1-star review criticizing competitor's user interface",
-    date: "2024-05-08",
-    score: 7.5,
-    metadata: { app_name: "PermitHub", rating: 1 },
-  },
-  {
-    id: "4",
-    source: "google_trends",
-    type: "distribution_gap",
-    title: "Permit automation searches up 250%",
-    description: "Google Trends shows breakout growth in permit automation searches",
-    date: "2024-05-07",
-    score: 8.9,
-    metadata: { trend_score: 85, is_breakout: true },
-  },
-  {
-    id: "5",
-    source: "job_postings",
-    type: "margin_expansion",
-    title: "156 permit coordinator positions open",
-    description: "Indeed shows high demand for manual permit coordination roles",
-    date: "2024-05-06",
-    score: 8.1,
-    metadata: { industry: "construction", job_count: 156 },
-  },
-  {
-    id: "6",
-    source: "sec_filings",
-    type: "regulation_change",
-    title: "New permit requirements announced",
-    description: "SEC filing mentions new regulatory compliance requirements",
-    date: "2024-05-05",
-    score: 7.8,
-    metadata: { company: "BuildCorp Inc", industry_code: "1600" },
-  },
-];
 
 export default function SignalExplorer() {
   const [searchTerm, setSearchTerm] = useState("");
@@ -97,56 +31,69 @@ export default function SignalExplorer() {
   const [filterType, setFilterType] = useState<string>("all");
   const [sortBy, setSortBy] = useState<"score" | "date">("score");
 
-  const filteredAndSortedSignals = useMemo(() => {
-    let filtered = MOCK_SIGNALS.filter((signal) => {
-      const matchesSearch =
-        signal.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        signal.description.toLowerCase().includes(searchTerm.toLowerCase());
+  // Fetch real data from tRPC
+  const { data, isLoading, error } = trpc.wedges.exploreSignals.useQuery({
+    source: filterSource === "all" ? undefined : filterSource,
+    type: filterType === "all" ? undefined : filterType,
+    limit: 100,
+  });
 
-      const matchesSource = filterSource === "all" || signal.source === filterSource;
-      const matchesType = filterType === "all" || signal.type === filterType;
+  const signals = data?.signals || [];
 
-      return matchesSearch && matchesSource && matchesType;
-    });
+  const sources = Array.from(
+    new Set(signals.map((s: any) => s.source))
+  );
 
-    // Sort
-    filtered.sort((a, b) => {
-      if (sortBy === "score") {
-        return b.score - a.score;
-      } else {
-        return new Date(b.date).getTime() - new Date(a.date).getTime();
-      }
-    });
-
-    return filtered;
-  }, [searchTerm, filterSource, filterType, sortBy]);
-
-  const sources = Array.from(new Set(MOCK_SIGNALS.map((s) => s.source)));
-  const types = Array.from(new Set(MOCK_SIGNALS.map((s) => s.type)));
+  const types = Array.from(
+    new Set(signals.map((s: any) => s.type))
+  );
 
   const getSourceColor = (source: string) => {
-    const colors: Record<string, string> = {
-      reddit: "bg-orange-100 text-orange-800",
-      hackernews: "bg-amber-100 text-amber-800",
-      app_store: "bg-blue-100 text-blue-800",
-      google_trends: "bg-purple-100 text-purple-800",
-      job_postings: "bg-green-100 text-green-800",
-      sec_filings: "bg-red-100 text-red-800",
-    };
-    return colors[source] || "bg-slate-100 text-slate-800";
+    switch (source) {
+      case "reddit":
+        return "bg-orange-100 text-orange-800";
+      case "hackernews":
+        return "bg-amber-100 text-amber-800";
+      case "app_store":
+        return "bg-blue-100 text-blue-800";
+      case "play_store":
+        return "bg-green-100 text-green-800";
+      case "google_trends":
+        return "bg-purple-100 text-purple-800";
+      case "producthunt":
+        return "bg-pink-100 text-pink-800";
+      case "sec_filings":
+        return "bg-red-100 text-red-800";
+      case "job_postings":
+        return "bg-cyan-100 text-cyan-800";
+      case "yc":
+        return "bg-indigo-100 text-indigo-800";
+      case "openvc":
+        return "bg-violet-100 text-violet-800";
+      default:
+        return "bg-slate-100 text-slate-800";
+    }
   };
 
-  const getTypeIcon = (type: string) => {
-    const icons: Record<string, string> = {
-      pain_signal: "🔴",
-      incumbent_weakness: "📉",
-      distribution_gap: "📊",
-      margin_expansion: "💰",
-      regulation_change: "⚖️",
-      emerging_category: "🌱",
-      geographic_wedge: "🌍",
-    };
-    return icons[type] || "📌";
+  const getTypeColor = (type: string) => {
+    switch (type) {
+      case "pain_signal":
+        return "bg-red-50 text-red-700 border border-red-200";
+      case "incumbent_weakness":
+        return "bg-yellow-50 text-yellow-700 border border-yellow-200";
+      case "emerging_category":
+        return "bg-blue-50 text-blue-700 border border-blue-200";
+      case "distribution_gap":
+        return "bg-green-50 text-green-700 border border-green-200";
+      case "regulation_change":
+        return "bg-purple-50 text-purple-700 border border-purple-200";
+      case "margin_expansion":
+        return "bg-orange-50 text-orange-700 border border-orange-200";
+      case "geographic_wedge":
+        return "bg-pink-50 text-pink-700 border border-pink-200";
+      default:
+        return "bg-slate-50 text-slate-700 border border-slate-200";
+    }
   };
 
   return (
@@ -155,48 +102,33 @@ export default function SignalExplorer() {
         {/* Header */}
         <div className="mb-8">
           <h1 className="text-4xl font-bold text-slate-900 mb-2">Signal Explorer</h1>
-          <p className="text-slate-600">
-            Browse raw signals from all data sources that feed the wedge detection engine
-          </p>
+          <p className="text-lg text-slate-600">Browse raw signals from all data sources</p>
         </div>
 
         {/* Filters */}
         <div className="bg-white rounded-lg shadow-sm p-6 mb-8 border border-slate-200">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* Search */}
-            <div className="lg:col-span-2">
-              <div className="relative">
-                <Search className="absolute left-3 top-3 w-5 h-5 text-slate-400" />
-                <Input
-                  placeholder="Search signals..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="pl-10"
-                />
-              </div>
+            <div className="relative">
+              <Search className="absolute left-3 top-3 w-4 h-4 text-slate-400" />
+              <Input
+                placeholder="Search signals..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
             </div>
-
-            {/* Sort */}
-            <Select value={sortBy} onValueChange={(v) => setSortBy(v as any)}>
-              <SelectTrigger>
-                <SelectValue placeholder="Sort by..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="score">Highest Score</SelectItem>
-                <SelectItem value="date">Most Recent</SelectItem>
-              </SelectContent>
-            </Select>
 
             {/* Source Filter */}
             <Select value={filterSource} onValueChange={setFilterSource}>
               <SelectTrigger>
-                <SelectValue placeholder="All sources" />
+                <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Sources</SelectItem>
-                {sources.map((s) => (
-                  <SelectItem key={s} value={s}>
-                    {s.replace(/_/g, " ")}
+                {sources.map((source: any) => (
+                  <SelectItem key={String(source)} value={String(source)}>
+                    {String(source).replace(/_/g, " ")}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -205,96 +137,110 @@ export default function SignalExplorer() {
             {/* Type Filter */}
             <Select value={filterType} onValueChange={setFilterType}>
               <SelectTrigger>
-                <SelectValue placeholder="All types" />
+                <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Types</SelectItem>
-                {types.map((t) => (
-                  <SelectItem key={t} value={t}>
-                    {t.replace(/_/g, " ")}
+                {types.map((type: any) => (
+                  <SelectItem key={String(type)} value={String(type)}>
+                    {String(type).replace(/_/g, " ")}
                   </SelectItem>
                 ))}
+              </SelectContent>
+            </Select>
+
+            {/* Sort */}
+            <Select value={sortBy} onValueChange={(value) => setSortBy(value as any)}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="score">Highest Score</SelectItem>
+                <SelectItem value="date">Most Recent</SelectItem>
               </SelectContent>
             </Select>
           </div>
         </div>
 
-        {/* Results Count */}
-        <div className="mb-4 text-sm text-slate-600">
-          Showing {filteredAndSortedSignals.length} of {MOCK_SIGNALS.length} signals
-        </div>
+        {/* Results */}
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center py-12">
+            <Loader2 className="w-8 h-8 text-blue-600 animate-spin mb-3" />
+            <p className="text-slate-600">Loading signals...</p>
+          </div>
+        ) : error ? (
+          <div className="bg-red-50 border border-red-200 rounded-lg p-6 text-red-800">
+            <p className="font-semibold">Error loading signals</p>
+            <p className="text-sm mt-1">{error.message}</p>
+          </div>
+        ) : signals.length === 0 ? (
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-12 text-center">
+            <p className="text-slate-600 text-lg">No signals found matching your filters</p>
+            <p className="text-slate-500 text-sm mt-2">Try adjusting your search or filters</p>
+          </div>
+        ) : (
+          <>
+            <p className="text-slate-600 mb-4">Showing {signals.length} signals</p>
 
-        {/* Signals List */}
-        <div className="space-y-4">
-          {filteredAndSortedSignals.map((signal) => (
-            <Card key={signal.id} className="hover:shadow-md transition-shadow">
-              <CardContent className="p-6">
-                <div className="flex items-start gap-4">
-                  {/* Icon */}
-                  <div className="text-3xl mt-1">{getTypeIcon(signal.type)}</div>
-
-                  {/* Content */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-4 mb-2">
+            {/* Signal Feed */}
+            <div className="space-y-4">
+              {signals.map((signal: Signal) => (
+                <Card
+                  key={signal.id}
+                  className="border-l-4 border-l-blue-400 hover:shadow-md transition-shadow cursor-pointer"
+                >
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between gap-4">
                       <div className="flex-1">
-                        <h3 className="font-semibold text-slate-900 line-clamp-1">
-                          {signal.title}
-                        </h3>
-                        <p className="text-sm text-slate-600 line-clamp-2 mt-1">
-                          {signal.description}
-                        </p>
+                        <CardTitle className="text-base leading-tight">{signal.title}</CardTitle>
+                        <CardDescription className="text-xs mt-2">
+                          {signal.source.replace(/_/g, " ")} • {signal.created_at}
+                        </CardDescription>
                       </div>
-                      <div className="text-right flex-shrink-0">
-                        <div className="text-2xl font-bold text-blue-600">
-                          {signal.score.toFixed(1)}
-                        </div>
-                        <div className="text-xs text-slate-500">Signal Score</div>
+                      <div className="flex items-center gap-2">
+                        <Badge className={getSourceColor(signal.source)}>
+                          {signal.source.replace(/_/g, " ")}
+                        </Badge>
+                        <Badge className={getTypeColor(signal.type)}>
+                          {signal.type.replace(/_/g, " ")}
+                        </Badge>
                       </div>
                     </div>
+                  </CardHeader>
 
-                    {/* Metadata and Badges */}
-                    <div className="flex flex-wrap items-center gap-2 mt-3">
-                      <Badge className={getSourceColor(signal.source)}>
-                        {signal.source.replace(/_/g, " ")}
-                      </Badge>
-                      <Badge variant="outline">{signal.type.replace(/_/g, " ")}</Badge>
-                      <span className="text-xs text-slate-500">
-                        {new Date(signal.date).toLocaleDateString()}
-                      </span>
+                  <CardContent className="space-y-3">
+                    <p className="text-sm text-slate-700">{signal.description}</p>
 
-                      {/* Metadata display */}
-                      {Object.entries(signal.metadata).map(([key, value]) => (
-                        <span key={key} className="text-xs text-slate-500">
-                          {key}: <span className="font-semibold">{String(value)}</span>
-                        </span>
-                      ))}
-
-                      {/* External Link */}
+                    <div className="flex items-center justify-between pt-2 border-t">
+                      <div className="flex items-center gap-4 text-xs text-slate-500">
+                        <span>Score: <span className="font-bold text-slate-900">{signal.score.toFixed(1)}</span></span>
+                        {signal.metadata && Object.keys(signal.metadata).length > 0 && (
+                          <span>
+                            {Object.entries(signal.metadata).map(([key, value]) => (
+                              <span key={key} className="ml-2">
+                                {key}: <span className="font-semibold">{String(value)}</span>
+                              </span>
+                            ))}
+                          </span>
+                        )}
+                      </div>
                       {signal.url && (
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="ml-auto gap-1"
+                          className="gap-2 h-auto p-1"
                           onClick={() => window.open(signal.url, "_blank")}
                         >
                           <ExternalLink className="w-4 h-4" />
-                          View Source
+                          View
                         </Button>
                       )}
                     </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
-        {/* Empty State */}
-        {filteredAndSortedSignals.length === 0 && (
-          <Card className="text-center py-12">
-            <Search className="w-12 h-12 text-slate-300 mx-auto mb-4" />
-            <p className="text-slate-600">No signals match your filters</p>
-          </Card>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </>
         )}
       </div>
     </div>

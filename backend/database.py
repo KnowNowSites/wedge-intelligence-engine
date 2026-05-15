@@ -7,7 +7,7 @@ import sqlite3
 from pathlib import Path
 from datetime import datetime
 
-DB_PATH = Path(__file__).parent.parent / "data" / "wie.db"
+DB_PATH = Path(__file__).parent.parent / "wie.db"
 
 
 def get_db_connection():
