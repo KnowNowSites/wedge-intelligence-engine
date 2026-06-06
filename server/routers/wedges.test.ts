@@ -300,8 +300,8 @@ describe("wedgesRouter", () => {
       expect(
         result.wedges.every(
           (w) =>
-            w.mrr_timeline.to_10k_mrr_months > 0 &&
-            w.mrr_timeline.to_100k_mrr_months > 0
+            (w.to_10k_mrr_months ?? 0) > 0 &&
+            (w.to_100k_mrr_months ?? 0) > 0
         )
       ).toBe(true);
     });
