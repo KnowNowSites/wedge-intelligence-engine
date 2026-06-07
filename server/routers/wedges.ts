@@ -25,15 +25,16 @@ export const wedgesRouter = router({
       return {
         total: wedges.length,
         wedges: (wedges || []).map((w: any) => ({
-          id: w.id || w.wedge_id,
-          name: w.wedge_name || w.name,
-          score: w.wedge_score || w.score,
-          detector: w.detector_source || w.detector,
+          id: w.id,
+          wedge_name: w.wedge_name,
+          wedge_score: w.wedge_score,
+          detector_source: w.detector_source,
           complexity: w.complexity,
           enterprise_value: w.enterprise_value,
-          to_10k_mrr_months: w.to_10k_mrr_months,
-          to_100k_mrr_months: w.to_100k_mrr_months,
-          created_at: w.created_at,
+          mrr_timeline: {
+            to_10k_mrr_months: w.to_10k_mrr_months,
+            to_100k_mrr_months: w.to_100k_mrr_months,
+          },
         })),
       };
     }),
@@ -47,15 +48,17 @@ export const wedgesRouter = router({
       }
 
       return {
-        id: wedge.id || wedge.wedge_id,
-        name: wedge.wedge_name || wedge.name,
-        score: wedge.wedge_score || wedge.score,
-        detector: wedge.detector_source || wedge.detector,
+        id: wedge.id,
+        wedge_name: wedge.wedge_name,
+        wedge_score: wedge.wedge_score,
+        detector_source: wedge.detector_source,
         complexity: wedge.complexity,
         enterprise_value: wedge.enterprise_value,
-        to_10k_mrr_months: wedge.to_10k_mrr_months,
-        to_100k_mrr_months: wedge.to_100k_mrr_months,
-        evidence: wedge.evidence_json ? JSON.parse(wedge.evidence_json) : {},
+        mrr_timeline: {
+          to_10k_mrr_months: wedge.to_10k_mrr_months,
+          to_100k_mrr_months: wedge.to_100k_mrr_months,
+        },
+        evidence: wedge.evidence_json,
         created_at: wedge.created_at,
       };
     }),
@@ -74,7 +77,8 @@ export const wedgesRouter = router({
           description: s.description,
           score: s.score,
           url: s.url,
-          date: s.created_at || s.scraped_at,
+          metadata: s.metadata_json,
+          created_at: s.created_at,
         })),
       };
     }),
@@ -106,7 +110,8 @@ export const wedgesRouter = router({
           description: signal.description,
           score: signal.score,
           url: signal.url,
-          date: signal.created_at || signal.scraped_at,
+          metadata: signal.metadata_json,
+          created_at: signal.created_at,
         })),
       };
     }),

@@ -66,10 +66,10 @@ export default function WedgeDetail() {
           <div className="flex items-start justify-between gap-4">
             <div className="flex-1">
               <h1 className="text-4xl font-bold text-slate-900 mb-2">
-                {wedge.name}
+                {wedge.wedge_name}
               </h1>
               <p className="text-slate-600">
-                Detected via <span className="font-semibold">{wedge.detector?.replace(/_/g, " ") || "Unknown"}</span>
+                Detected via <span className="font-semibold">{wedge.detector_source?.replace(/_/g, " ") || "Unknown"}</span>
               </p>
             </div>
 
@@ -104,7 +104,7 @@ export default function WedgeDetail() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-slate-900">{wedge.score?.toFixed(1) || "N/A"}</div>
+              <div className="text-3xl font-bold text-slate-900">{wedge.wedge_score?.toFixed(1) || "N/A"}</div>
               <p className="text-xs text-slate-500 mt-1">Out of 100</p>
             </CardContent>
           </Card>
@@ -116,7 +116,7 @@ export default function WedgeDetail() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="text-3xl font-bold text-slate-900">{wedge.to_10k_mrr_months || "N/A"}mo</div>
+              <div className="text-3xl font-bold text-slate-900">{wedge.mrr_timeline?.to_10k_mrr_months || "N/A"}mo</div>
               <p className="text-xs text-slate-500 mt-1">Estimated timeline</p>
             </CardContent>
           </Card>

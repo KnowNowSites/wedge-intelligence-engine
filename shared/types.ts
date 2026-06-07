@@ -3,5 +3,5 @@
  * Import shared types from this single entry point.
  */
 
-export type * from "../drizzle/schema";
+// User type is now defined in server/_core/context.ts
 export * from "./_core/errors";

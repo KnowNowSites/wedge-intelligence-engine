@@ -3,6 +3,10 @@ import { ENV } from './_core/env';
 /**
  * Database layer that proxies to Python backend for signal/wedge data
  * and uses in-memory storage for user auth (compatible with Manus template)
+ * 
+ * NOTE: This approach uses the Python HTTP API as a database proxy.
+ * The Python backend handles all SQLite queries and maintains the single source of truth.
+ * This is a pragmatic choice for a local tool that keeps the architecture simple.
  */
 
 // In-memory user store for auth (can be replaced with actual DB later)

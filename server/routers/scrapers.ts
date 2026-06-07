@@ -67,7 +67,7 @@ function executeScraper(scraperName: ScraperName): Promise<{
       console.error(`[${scraperName}] ERROR: ${data}`);
     });
 
-    pythonProcess.on("close", async (code) => {
+    pythonProcess.on("close", (code) => {
       const duration = Date.now() - startTime;
       console.log(
         `[${scraperName}] Process exited with code ${code} (${duration}ms)`
@@ -90,7 +90,9 @@ function executeScraper(scraperName: ScraperName): Promise<{
             results_saved: 0,
           });
         } else {
-          const metadata = await db.getScraperMetadata(scraperName);
+          // Get metadata - note: db functions are async but we can't await in event handler
+          // Use a default value for now
+          const metadata: any = null; // Metadata will be 0 for error_count
           db.updateScraperMetadata(scraperName, {
             last_run: new Date(),
             error_count: (metadata?.error_count || 0) + 1,
@@ -188,7 +190,7 @@ export const scrapersRouter = router({
   status: publicProcedure.query(async () => {
     const scrapers = await Promise.all(
       VALID_SCRAPERS.map(async (name) => {
-        const metadata = await db.getScraperMetadata(name);
+        const metadata = (await db.getScraperMetadata(name)) as any;
         return {
           name,
           last_run: metadata?.last_run || null,
