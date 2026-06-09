@@ -13,7 +13,7 @@ If you need G2 data, consider:
 3. Manual research for specific categories
 """
 
-from backend.utils import get_logger
+from utils import get_logger
 
 logger = get_logger("g2_scraper")
 

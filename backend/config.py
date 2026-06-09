@@ -16,7 +16,7 @@ class Config:
     """Configuration class for WIE."""
     
     # Database
-    DATABASE_PATH = os.getenv("DATABASE_PATH", str(Path(__file__).parent.parent / "data" / "wie.db"))
+    DATABASE_PATH = os.getenv("DATABASE_PATH", str(Path(__file__).parent.parent / "wie.db"))
     
     # Reddit scraper
     REDDIT_USERNAME = os.getenv("REDDIT_USERNAME", "")
@@ -84,7 +84,7 @@ class Config:
 # Example .env template
 ENV_TEMPLATE = """
 # Database
-DATABASE_PATH=./data/wie.db
+DATABASE_PATH=./wie.db
 
 # Reddit Scraper (get from reddit.com/prefs/apps)
 REDDIT_USERNAME=your_username

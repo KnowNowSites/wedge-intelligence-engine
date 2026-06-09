@@ -8,8 +8,8 @@ import sqlite3
 import re
 from datetime import datetime
 from typing import Optional
-from backend.database import get_db_connection
-from backend.utils import safe_scraper_execution, retry_with_backoff, randomized_delay, get_logger
+from database import get_db_connection
+from utils import safe_scraper_execution, retry_with_backoff, randomized_delay, get_logger
 
 logger = get_logger("reddit_scraper")
 

@@ -13,7 +13,7 @@ If you need Amazon reviews, consider:
 3. Focusing on app store reviews instead (recommended)
 """
 
-from backend.utils import get_logger
+from utils import get_logger
 
 logger = get_logger("amazon_reviews_scraper")
 

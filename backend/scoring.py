@@ -2,8 +2,9 @@
 Wedge Scoring Engine - Implements the wedge score formula and profile generation.
 """
 
+import math
 from typing import Optional
-from backend.utils import get_logger
+from utils import get_logger
 
 logger = get_logger("scoring")
 
@@ -13,8 +14,8 @@ def calculate_wedge_score(wedge: dict) -> dict:
     Calculate wedge score using the multi-factor formula.
     
     All inputs are floats from 1.0 to 10.0
-    Higher = better for numerator fields
-    Higher = worse for denominator fields
+    Normalize to 0-1 range before multiplying to prevent score explosion.
+    Log-normalize result to 0-100 scale.
     
     Args:
         wedge: Dict with scoring dimensions
@@ -23,40 +24,37 @@ def calculate_wedge_score(wedge: dict) -> dict:
         Dict with wedge_score, speed_to_mrr estimates, EV ceiling, complexity
     """
     try:
-        # Extract scoring dimensions (defaults to 5.0 if missing)
-        pain_score = float(wedge.get("pain_score", 5.0))
-        spend_potential = float(wedge.get("spend_potential", 5.0))
-        growth_rate = float(wedge.get("growth_rate", 5.0))
-        expandability = float(wedge.get("expandability", 5.0))
-        distribution_score = float(wedge.get("distribution_score", 5.0))
+        # Normalize all inputs to 0-1 range before multiplying
+        pain = float(wedge.get("pain_score", 5.0)) / 10
+        spend = float(wedge.get("spend_potential", 5.0)) / 10
+        growth = float(wedge.get("growth_rate", 5.0)) / 10
+        expand = float(wedge.get("expandability", 5.0)) / 10
+        dist = float(wedge.get("distribution_score", 5.0)) / 10
         
-        competition_score = float(wedge.get("competition_score", 5.0))
-        capital_required = float(wedge.get("capital_required", 5.0))
-        regulatory_friction = float(wedge.get("regulatory_friction", 5.0))
+        competition = float(wedge.get("competition_score", 5.0)) / 10
+        capital = float(wedge.get("capital_required", 5.0)) / 10
+        regulatory = float(wedge.get("regulatory_friction", 5.0)) / 10
         
         # Calculate numerator and denominator
-        numerator = (
-            pain_score
-            * spend_potential
-            * growth_rate
-            * expandability
-            * distribution_score
-        )
-        
-        denominator = (
-            competition_score
-            * capital_required
-            * regulatory_friction
-        )
+        numerator = pain * spend * growth * expand * dist
+        denominator = competition * capital * regulatory
         
         # Avoid division by zero
         if denominator == 0:
-            denominator = 1.0
+            denominator = 0.001
         
-        base_score = round(numerator / denominator, 3)
+        raw = numerator / denominator
+        
+        # Log-normalize to 0-100 scale
+        # raw range: 0.00001 (worst) to 100000 (best)
+        # log10 range: -5 to 5, shift +5 gives 0-10, multiply by 10 = 0-100
+        try:
+            score = round(max(0, min(100, (math.log10(raw) + 5) * 10)), 2)
+        except ValueError:
+            score = 0.0
         
         return {
-            "wedge_score": base_score,
+            "wedge_score": score,
             "speed_to_10k_mrr_months": estimate_mrr_timeline(wedge, target=10000),
             "speed_to_100k_mrr_months": estimate_mrr_timeline(wedge, target=100000),
             "enterprise_value_ceiling": classify_ev(wedge),

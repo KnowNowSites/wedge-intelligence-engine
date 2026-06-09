@@ -1,65 +1,66 @@
 """
-Distribution Gap Detector - Identifies rising keywords with no clear SaaS leader.
-Queries google_trends, producthunt_launches, hn_posts.
+Distribution Gap Detector - Identifies distribution gaps in markets.
+Queries unified signals table for distribution gap keywords.
 """
+import sqlite3
+import os
+import json
 
-from datetime import datetime
-from backend.database import get_db_connection
-from backend.utils import get_logger
+DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '..', 'wie.db')
 
-logger = get_logger("distribution_gap_detector")
+DISTRIBUTION_KEYWORDS = [
+    'how do i find', 'where can i', 'looking for a tool', 'any recommendations',
+    'does anyone know a', 'searching for software', 'need a tool for',
+    'is there a', 'looking for', 'anyone know of'
+]
 
+def detect_distribution_gap():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
 
-def detect_distribution_gaps() -> list[dict]:
-    """Detect distribution opportunities where demand exists but supply does not."""
-    logger.info("Running distribution gap detector...")
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
     candidates = []
-    
     try:
-        # Find rising Google Trends with high trend_score but low Product Hunt presence
-        cursor.execute("""
-            SELECT keyword, trend_score, is_breakout
-            FROM google_trends
-            WHERE is_breakout = 1 AND trend_score > 70
-            ORDER BY trend_score DESC
-            LIMIT 100
-        """)
-        
-        rising_keywords = cursor.fetchall()
-        logger.info(f"Found {len(rising_keywords)} rising keywords")
-        
-        for keyword, trend_score, is_breakout in rising_keywords:
-            # Check if keyword appears in Product Hunt launches
-            cursor.execute("""
-                SELECT COUNT(*) FROM producthunt_launches
-                WHERE category_tags LIKE ? OR tagline LIKE ?
-            """, (f"%{keyword}%", f"%{keyword}%"))
-            
-            ph_count = cursor.fetchone()[0]
-            
-            # If rising but few Product Hunt launches, it's a distribution gap
-            if ph_count < 3:
-                distribution_score = min(10.0, (trend_score / 10.0))
-                
+        signals = c.execute(
+            "SELECT * FROM signals WHERE source IN ('google_trends', 'hackernews')"
+        ).fetchall()
+
+        for signal in signals:
+            text = ' '.join(filter(None, [
+                signal['title'] if 'title' in signal.keys() else '',
+                signal['description'] if 'description' in signal.keys() else '',
+            ])).lower()
+
+            matched = [kw for kw in DISTRIBUTION_KEYWORDS if kw in text]
+            if len(matched) >= 1:
                 candidates.append({
-                    "detector_name": "distribution_gap",
-                    "wedge_name": f"{keyword}_distribution_gap",
-                    "keyword": keyword,
-                    "distribution_score": distribution_score,
-                    "trend_score": trend_score,
-                    "producthunt_presence": ph_count,
-                    "detected_at": datetime.now(),
+                    'detector_source': 'distribution_gap',
+                    'wedge_name': f"[NEEDS REVIEW] {signal['source'].upper()}: {signal['title'][:80]}",
+                    'pain_score': 6.0,
+                    'spend_potential': 7.0,
+                    'growth_rate': 6.0,
+                    'expandability': 7.0,
+                    'distribution_score': 3.0,
+                    'competition_score': 5.0,
+                    'capital_required': 2.0,
+                    'regulatory_friction': 1.0,
+                    'evidence': json.dumps([{
+                        'source': signal['source'],
+                        'url': signal['url'] if 'url' in signal.keys() else '',
+                        'matched_keywords': matched
+                    }]),
+                    'entry_segment': 'Unknown — needs manual review',
+                    'parent_market': 'Unknown — needs manual review',
                 })
-        
-        logger.info(f"Distribution gap detector found {len(candidates)} candidates")
-    
     except Exception as e:
-        logger.error(f"Error in distribution gap detector: {e}")
-    
+        print(f'distribution_gap detector error: {e}')
     finally:
         conn.close()
-    
+
+    print(f'distribution_gap: {len(candidates)} candidates found')
     return candidates
+
+if __name__ == '__main__':
+    results = detect_distribution_gap()
+    for r in results:
+        print(r['wedge_name'][:80])

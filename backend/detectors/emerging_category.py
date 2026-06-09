@@ -1,106 +1,66 @@
 """
-Emerging Category Detector - Identifies fragmented markets with multiple players.
-Queries yc_companies, job_postings, hn_posts, openvc_companies.
+Emerging Category Detector - Identifies emerging market categories.
+Queries unified signals table for emerging category keywords.
 """
+import sqlite3
+import os
+import json
 
-from datetime import datetime
-from collections import defaultdict
-from backend.database import get_db_connection
-from backend.utils import get_logger
+DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '..', 'wie.db')
 
-logger = get_logger("emerging_category_detector")
+EMERGING_KEYWORDS = [
+    'new category', 'no one has built', 'first of its kind', 'nobody doing this',
+    'gap in market', 'underserved', 'niche', 'untapped', 'emerging',
+    'new market', 'blue ocean', 'white space'
+]
 
+def detect_emerging_category():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
 
-def detect_emerging_categories() -> list[dict]:
-    """
-    Detect fragmented markets with 5+ competitors but no clear leader.
-    
-    Strategy:
-    1. Find verticals where 5+ YC companies exist but none has obvious dominance
-    2. Find verticals where job postings exist but no software brand is mentioned
-    3. Find verticals where OpenVC has funded 3+ companies (validated but unsolved)
-    4. Generate wedge candidates
-    
-    Returns:
-        List of wedge candidates
-    """
-    logger.info("Running emerging category detector...")
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
     candidates = []
-    
     try:
-        # Find verticals with 5+ YC companies
-        cursor.execute("""
-            SELECT vertical, COUNT(*) as company_count
-            FROM yc_companies
-            WHERE vertical IS NOT NULL AND vertical != ''
-            GROUP BY vertical
-            HAVING company_count >= 5
-            ORDER BY company_count DESC
-            LIMIT 50
-        """)
-        
-        yc_verticals = cursor.fetchall()
-        logger.info(f"Found {len(yc_verticals)} YC verticals with 5+ companies")
-        
-        for vertical, company_count in yc_verticals:
-            # Check if any company has dominant presence (would need funding data)
-            # For now, assume fragmented if 5+ companies
-            
-            # Calculate emerging score
-            emerging_score = min(10.0, 3.0 + (company_count / 3.0))
-            
-            candidates.append({
-                "detector_name": "emerging_category",
-                "wedge_name": f"{vertical}_emerging",
-                "vertical": vertical,
-                "emerging_score": emerging_score,
-                "yc_company_count": company_count,
-                "signal_type": "yc_fragmentation",
-                "detected_at": datetime.now(),
-            })
-        
-        # Find verticals with 3+ OpenVC companies
-        cursor.execute("""
-            SELECT vertical, COUNT(*) as company_count
-            FROM openvc_companies
-            WHERE vertical IS NOT NULL AND vertical != ''
-            GROUP BY vertical
-            HAVING company_count >= 3
-            ORDER BY company_count DESC
-            LIMIT 50
-        """)
-        
-        openvc_verticals = cursor.fetchall()
-        logger.info(f"Found {len(openvc_verticals)} OpenVC verticals with 3+ companies")
-        
-        for vertical, company_count in openvc_verticals:
-            emerging_score = min(10.0, 2.5 + (company_count / 2.0))
-            
-            candidates.append({
-                "detector_name": "emerging_category",
-                "wedge_name": f"{vertical}_emerging_openvc",
-                "vertical": vertical,
-                "emerging_score": emerging_score,
-                "openvc_company_count": company_count,
-                "signal_type": "openvc_fragmentation",
-                "detected_at": datetime.now(),
-            })
-        
-        logger.info(f"Emerging category detector found {len(candidates)} candidates")
-    
+        signals = c.execute(
+            "SELECT * FROM signals WHERE source IN ('hackernews', 'producthunt')"
+        ).fetchall()
+
+        for signal in signals:
+            text = ' '.join(filter(None, [
+                signal['title'] if 'title' in signal.keys() else '',
+                signal['description'] if 'description' in signal.keys() else '',
+            ])).lower()
+
+            matched = [kw for kw in EMERGING_KEYWORDS if kw in text]
+            if len(matched) >= 1:
+                candidates.append({
+                    'detector_source': 'emerging_category',
+                    'wedge_name': f"[NEEDS REVIEW] {signal['source'].upper()}: {signal['title'][:80]}",
+                    'pain_score': 7.0,
+                    'spend_potential': 8.0,
+                    'growth_rate': 8.0,
+                    'expandability': 7.0,
+                    'distribution_score': 6.0,
+                    'competition_score': 2.0,
+                    'capital_required': 5.0,
+                    'regulatory_friction': 3.0,
+                    'evidence': json.dumps([{
+                        'source': signal['source'],
+                        'url': signal['url'] if 'url' in signal.keys() else '',
+                        'matched_keywords': matched
+                    }]),
+                    'entry_segment': 'Unknown — needs manual review',
+                    'parent_market': 'Unknown — needs manual review',
+                })
     except Exception as e:
-        logger.error(f"Error in emerging category detector: {e}")
-    
+        print(f'emerging_category detector error: {e}')
     finally:
         conn.close()
-    
+
+    print(f'emerging_category: {len(candidates)} candidates found')
     return candidates
 
-
-if __name__ == "__main__":
-    candidates = detect_emerging_categories()
-    for candidate in candidates:
-        print(f"Vertical: {candidate['vertical']}, Emerging Score: {candidate['emerging_score']}")
+if __name__ == '__main__':
+    results = detect_emerging_category()
+    for r in results:
+        print(r['wedge_name'][:80])

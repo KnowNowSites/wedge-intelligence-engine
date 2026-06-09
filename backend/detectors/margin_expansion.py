@@ -1,64 +1,66 @@
 """
-Margin Expansion Detector - Identifies high-margin manual service opportunities.
-Queries reddit_posts, job_postings, app_store_reviews.
+Margin Expansion Detector - Identifies high-margin business opportunities.
+Queries unified signals table for margin expansion keywords.
 """
+import sqlite3
+import os
+import json
 
-from datetime import datetime
-from backend.database import get_db_connection
-from backend.utils import get_logger
+DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '..', 'wie.db')
 
-logger = get_logger("margin_expansion_detector")
-
-HIGH_MARGIN_KEYWORDS = [
-    "consultant", "advisor", "freelancer", "contractor", "agency",
-    "service provider", "professional services", "outsource"
+MARGIN_KEYWORDS = [
+    'agency charges', 'consultant', 'hourly rate', 'manual work', 'we outsource',
+    'expensive service', 'high margin', 'consulting fee', 'labor intensive',
+    'professional services', 'billable hours', 'time and materials'
 ]
 
+def detect_margin_expansion():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    c = conn.cursor()
 
-def detect_margin_expansion() -> list[dict]:
-    """Detect industries with high prices but manual delivery."""
-    logger.info("Running margin expansion detector...")
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
     candidates = []
-    
     try:
-        # Find job postings for high-margin manual roles
-        cursor.execute("""
-            SELECT inferred_industry, COUNT(*) as job_count
-            FROM job_postings
-            WHERE job_title LIKE '%consultant%' OR job_title LIKE '%advisor%'
-                OR job_title LIKE '%coordinator%' OR job_title LIKE '%manager%'
-            GROUP BY inferred_industry
-            HAVING job_count >= 5
-            ORDER BY job_count DESC
-            LIMIT 50
-        """)
-        
-        manual_industries = cursor.fetchall()
-        logger.info(f"Found {len(manual_industries)} industries with manual roles")
-        
-        for industry, job_count in manual_industries:
-            # Calculate margin expansion score
-            margin_score = min(10.0, 3.0 + (job_count / 5.0))
-            
-            candidates.append({
-                "detector_name": "margin_expansion",
-                "wedge_name": f"{industry}_margin_expansion",
-                "industry": industry,
-                "margin_score": margin_score,
-                "manual_job_count": job_count,
-                "signal_type": "high_manual_labor",
-                "detected_at": datetime.now(),
-            })
-        
-        logger.info(f"Margin expansion detector found {len(candidates)} candidates")
-    
+        signals = c.execute(
+            "SELECT * FROM signals WHERE source IN ('hackernews', 'job_postings', 'reddit')"
+        ).fetchall()
+
+        for signal in signals:
+            text = ' '.join(filter(None, [
+                signal['title'] if 'title' in signal.keys() else '',
+                signal['description'] if 'description' in signal.keys() else '',
+            ])).lower()
+
+            matched = [kw for kw in MARGIN_KEYWORDS if kw in text]
+            if len(matched) >= 1:
+                candidates.append({
+                    'detector_source': 'margin_expansion',
+                    'wedge_name': f"[NEEDS REVIEW] {signal['source'].upper()}: {signal['title'][:80]}",
+                    'pain_score': 6.0,
+                    'spend_potential': 8.0,
+                    'growth_rate': 7.0,
+                    'expandability': 7.0,
+                    'distribution_score': 6.0,
+                    'competition_score': 5.0,
+                    'capital_required': 3.0,
+                    'regulatory_friction': 2.0,
+                    'evidence': json.dumps([{
+                        'source': signal['source'],
+                        'url': signal['url'] if 'url' in signal.keys() else '',
+                        'matched_keywords': matched
+                    }]),
+                    'entry_segment': 'Unknown — needs manual review',
+                    'parent_market': 'Unknown — needs manual review',
+                })
     except Exception as e:
-        logger.error(f"Error in margin expansion detector: {e}")
-    
+        print(f'margin_expansion detector error: {e}')
     finally:
         conn.close()
-    
+
+    print(f'margin_expansion: {len(candidates)} candidates found')
     return candidates
+
+if __name__ == '__main__':
+    results = detect_margin_expansion()
+    for r in results:
+        print(r['wedge_name'][:80])

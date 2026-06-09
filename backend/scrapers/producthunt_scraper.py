@@ -5,8 +5,8 @@ Uses official Product Hunt GraphQL API (requires PRODUCTHUNT_API_TOKEN in .env).
 
 from datetime import datetime, timedelta
 import os
-from backend.database import get_db_connection
-from backend.utils import safe_scraper_execution, retry_with_backoff, randomized_delay, get_logger
+from database import get_db_connection
+from utils import safe_scraper_execution, retry_with_backoff, randomized_delay, get_logger
 
 logger = get_logger("producthunt_scraper")
 

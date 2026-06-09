@@ -5,8 +5,8 @@ Endpoint: https://hn.algolia.com/api/v1/search
 """
 
 from datetime import datetime
-from backend.database import get_db_connection
-from backend.utils import safe_scraper_execution, retry_with_backoff, randomized_delay, get_logger
+from database import get_db_connection
+from utils import safe_scraper_execution, retry_with_backoff, randomized_delay, get_logger
 import json
 import sqlite3
 import os

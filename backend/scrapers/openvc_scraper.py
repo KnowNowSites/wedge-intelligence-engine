@@ -5,8 +5,8 @@ Identifies verticals with early-stage funding (pre-seed/seed) or no recent fundi
 """
 
 from datetime import datetime
-from backend.database import get_db_connection
-from backend.utils import safe_scraper_execution, retry_with_backoff, randomized_delay, get_logger
+from database import get_db_connection
+from utils import safe_scraper_execution, retry_with_backoff, randomized_delay, get_logger
 
 logger = get_logger("openvc_scraper")
 

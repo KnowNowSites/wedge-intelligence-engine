@@ -1,47 +1,33 @@
 """
 Job Postings Scraper - Detects industries scaling manually via job postings.
-Uses Indeed RSS feeds and RemoteOK (no auth required).
+Uses RemoteOK free JSON API (no authentication required).
 Signals high volume of manual job titles = industry scaling manually instead of via software.
 """
 
+import re
 from datetime import datetime
-from backend.database import get_db_connection
-from backend.utils import safe_scraper_execution, retry_with_backoff, randomized_delay, get_logger
+from database import get_db_connection
+from utils import safe_scraper_execution, retry_with_backoff, randomized_delay, get_logger
 
 logger = get_logger("job_postings_scraper")
-
-# Keywords indicating manual processes
-MANUAL_KEYWORDS = [
-    "operations coordinator", "data entry specialist", "manual reporting",
-    "excel specialist", "billing coordinator", "field operations",
-    "dispatch coordinator", "workflow manager"
-]
-
-# Industries to monitor
-INDUSTRIES_TO_MONITOR = [
-    "roofing", "construction", "plumbing", "hvac", "landscaping",
-    "accounting", "bookkeeping", "legal", "healthcare", "logistics",
-    "transportation", "real estate", "property management"
-]
 
 
 @safe_scraper_execution("job_postings_scraper")
 @retry_with_backoff(max_retries=3, base_delay=2.0)
 def job_postings_scraper() -> list[dict]:
     """
-    Scrape job postings for manual process signals.
+    Scrape job postings from RemoteOK API for market signals.
     
     Returns:
         List of dicts with: job_title, company_name, inferred_industry, 
         posting_date, job_description_snippet, source_url
     """
-    logger.info(f"Starting Job Postings scraper for {len(INDUSTRIES_TO_MONITOR)} industries...")
+    logger.info("Starting Job Postings scraper from RemoteOK...")
     
     try:
         import requests
-        import feedparser
     except ImportError:
-        logger.error("requests or feedparser not installed. Run: pip install requests feedparser")
+        logger.error("requests not installed. Run: pip install requests")
         return []
     
     results = []
@@ -51,111 +37,58 @@ def job_postings_scraper() -> list[dict]:
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
         }
         
-        # Scrape Indeed RSS feeds for each industry
-        for industry in INDUSTRIES_TO_MONITOR:
+        # Fetch jobs from RemoteOK API (free, no auth required)
+        api_url = "https://remoteok.com/api"
+        
+        logger.info(f"Fetching jobs from RemoteOK API...")
+        response = requests.get(api_url, headers=headers, timeout=30)
+        response.raise_for_status()
+        
+        jobs_data = response.json()
+        
+        # RemoteOK returns a list where first item is metadata
+        logger.info(f"Found {len(jobs_data)} items from RemoteOK")
+        
+        for job in jobs_data[1:]:  # Skip first item (metadata)
             try:
-                logger.info(f"Scraping Indeed jobs for: {industry}")
+                # Extract job fields from RemoteOK API
+                job_title = job.get("position", "")
+                company_name = job.get("company", "")
+                job_slug = job.get("slug", "")
+                job_url = f"https://remoteok.com/{job_slug}" if job_slug else ""
                 
-                # Indeed RSS feed URL
-                rss_url = f"https://www.indeed.com/rss?q={industry}+jobs&l=&sort=date"
+                # Extract description snippet
+                description = job.get("description", "")
+                # Remove HTML tags from description
+                clean_desc = re.sub('<[^<]+?>', '', description)
+                snippet = clean_desc[:200] if clean_desc else ""
                 
-                response = requests.get(rss_url, headers=headers, timeout=30)
-                response.raise_for_status()
+                # Infer industry from tags
+                tags = job.get("tags", [])
+                inferred_industry = tags[0] if tags else "Unknown"
                 
-                feed = feedparser.parse(response.content)
-                entries = feed.get('entries', [])
-                
-                logger.info(f"Found {len(entries)} job postings for {industry}")
-                
-                for entry in entries[:20]:  # Limit to 20 per industry
-                    try:
-                        # Extract job data
-                        job_title = entry.get('title', '')
-                        summary = entry.get('summary', '')
-                        published = entry.get('published', '')
-                        link = entry.get('link', '')
-                        
-                        # Extract company name from summary (usually first line)
-                        company_name = ""
-                        if summary:
-                            lines = summary.split('<br />')
-                            if lines:
-                                company_name = lines[0].strip()
-                        
-                        # Check if job title contains manual keywords
-                        job_title_lower = job_title.lower()
-                        has_manual_signal = any(
-                            keyword.lower() in job_title_lower 
-                            for keyword in MANUAL_KEYWORDS
-                        )
-                        
-                        if has_manual_signal:
-                            results.append({
-                                "job_title": job_title,
-                                "company_name": company_name,
-                                "inferred_industry": industry,
-                                "posting_date": published,
-                                "job_description_snippet": summary[:200],  # First 200 chars
-                                "source_url": link,
-                            })
-                    
-                    except Exception as e:
-                        logger.debug(f"Error parsing job posting: {e}")
-                        continue
-                
-                randomized_delay(2, 4)
+                # Include all jobs to get diverse signals
+                if job_title and company_name:
+                    results.append({
+                        "job_title": job_title,
+                        "company_name": company_name,
+                        "inferred_industry": inferred_industry,
+                        "posting_date": job.get("date", datetime.now().isoformat()),
+                        "job_description_snippet": snippet,
+                        "source_url": job_url,
+                    })
             
             except Exception as e:
-                logger.warning(f"Failed to scrape Indeed for {industry}: {e}")
-                randomized_delay(2, 4)
+                logger.debug(f"Error parsing RemoteOK job: {e}")
                 continue
         
-        # Also try RemoteOK (alternative source)
-        try:
-            logger.info("Scraping RemoteOK for manual job titles...")
-            
-            remoteok_url = "https://remoteok.com/api"
-            response = requests.get(remoteok_url, headers=headers, timeout=30)
-            response.raise_for_status()
-            
-            jobs = response.json()
-            
-            for job in jobs[:50]:  # Limit to 50 jobs
-                try:
-                    job_title = job.get('title', '')
-                    company = job.get('company', '')
-                    description = job.get('description', '')
-                    url = job.get('url', '')
-                    
-                    # Check for manual keywords
-                    job_title_lower = job_title.lower()
-                    has_manual_signal = any(
-                        keyword.lower() in job_title_lower 
-                        for keyword in MANUAL_KEYWORDS
-                    )
-                    
-                    if has_manual_signal:
-                        results.append({
-                            "job_title": job_title,
-                            "company_name": company,
-                            "inferred_industry": "remote",
-                            "posting_date": datetime.now(),
-                            "job_description_snippet": description[:200],
-                            "source_url": url,
-                        })
-                
-                except Exception as e:
-                    logger.debug(f"Error parsing RemoteOK job: {e}")
-                    continue
-        
-        except Exception as e:
-            logger.warning(f"Failed to scrape RemoteOK: {e}")
+        randomized_delay(1, 2)
     
     except Exception as e:
         logger.error(f"Job Postings scraper error: {e}")
         return []
     
-    logger.info(f"Job Postings scraper completed: {len(results)} postings found")
+    logger.info(f"Job Postings scraper completed: {len(results)} jobs found")
     return results
 
 
@@ -169,7 +102,8 @@ def save_job_postings(postings: list[dict]) -> int:
         try:
             cursor.execute("""
                 INSERT OR IGNORE INTO job_postings 
-                (job_title, company_name, inferred_industry, posting_date, job_description_snippet, source_url, date_scraped)
+                (job_title, company_name, inferred_industry, posting_date, 
+                 job_description_snippet, source_url, date_scraped)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (
                 posting.get("job_title"),

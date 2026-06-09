@@ -203,14 +203,31 @@ def init_database():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_openvc_vertical ON openvc_companies(vertical)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_openvc_stage ON openvc_companies(funding_stage)")
 
+    # Signals table (unified view of all scraped signals)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS signals (
+            id TEXT PRIMARY KEY,
+            source TEXT NOT NULL,
+            type TEXT NOT NULL,
+            title TEXT,
+            description TEXT,
+            score REAL DEFAULT 0,
+            url TEXT,
+            metadata_json TEXT,
+            created_at TEXT,
+            scraped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_signals_source ON signals(source)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_signals_type ON signals(type)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_signals_date ON signals(scraped_at)")
+
     # Wedge candidates table (output from detectors)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS wedge_candidates (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            detector_name TEXT NOT NULL,
+            id TEXT PRIMARY KEY,
+            detector_source TEXT NOT NULL,
             wedge_name TEXT NOT NULL,
-            parent_market TEXT,
-            entry_segment TEXT,
             pain_score REAL DEFAULT 5.0,
             spend_potential REAL DEFAULT 5.0,
             growth_rate REAL DEFAULT 5.0,
@@ -219,41 +236,31 @@ def init_database():
             competition_score REAL DEFAULT 5.0,
             capital_required REAL DEFAULT 5.0,
             regulatory_friction REAL DEFAULT 5.0,
-            wedge_score REAL,
-            evidence_json TEXT,
-            date_detected TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(detector_name, wedge_name)
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(detector_source, wedge_name)
         )
     """)
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_wedge_score ON wedge_candidates(wedge_score)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_wedge_detector ON wedge_candidates(detector_name)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_wedge_detector ON wedge_candidates(detector_source)")
 
     # Wedge profiles table (final profiles for scores > 15.0)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS wedge_profiles (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            wedge_id TEXT UNIQUE NOT NULL,
+            id TEXT PRIMARY KEY,
             wedge_name TEXT NOT NULL,
-            parent_market TEXT,
-            entry_segment TEXT,
-            why_incumbents_fail TEXT,
-            speed_to_revenue_score REAL,
-            expansion_map TEXT,
-            defensibility_score REAL,
-            distribution_channels TEXT,
-            capital_required TEXT,
-            time_to_mvp TEXT,
-            market_timing_catalyst TEXT,
-            recommended_business_model TEXT,
+            wedge_score REAL NOT NULL,
+            detector_source TEXT,
+            enterprise_value TEXT,
+            complexity TEXT,
+            to_10k_mrr_months INTEGER,
+            to_100k_mrr_months INTEGER,
             evidence_json TEXT,
-            wedge_score REAL,
-            rejection_flags TEXT,
-            date_created TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_profile_score ON wedge_profiles(wedge_score)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_profile_detector ON wedge_profiles(detector_source)")
 
     # Watchlist table (user-saved wedges)
     cursor.execute("""
