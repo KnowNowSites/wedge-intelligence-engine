@@ -52,9 +52,7 @@ A full-stack market research tool that identifies profitable business wedges by 
    ```
 
    The application will be available at:
-   - **Frontend:** http://localhost:3000
-   - **Backend API:** http://localhost:8000
-   - **API Docs:** http://localhost:8000/docs
+   - **Frontend + API:** http://localhost:3000
 
 ---
 
@@ -65,7 +63,7 @@ A full-stack market research tool that identifies profitable business wedges by 
 ```
 wie/
 ├── backend/
-│   ├── main.py                 # FastAPI app entry point
+│   ├── api_server.py           # Express.js backend (Node.js)
 │   ├── database.py             # SQLite schema and initialization
 │   ├── config.py               # Configuration loader
 │   ├── utils.py                # Shared utilities (logging, retries, delays)
@@ -411,4 +409,4 @@ For issues or questions:
 
 ---
 
-**Built with:** FastAPI, React, Tailwind CSS, SQLite, APScheduler, Playwright, BeautifulSoup4, pytrends
+**Built with:** Express.js, React, Tailwind CSS, SQLite, APScheduler, Playwright, BeautifulSoup4, pytrends
