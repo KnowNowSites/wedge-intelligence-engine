@@ -36,16 +36,27 @@ def scrape_sec() -> int:
             logger.info(f"Searching for: {kw}")
             
             r = requests.get(url, headers=headers, timeout=15)
-            hits = r.json().get('hits', {}).get('hits', [])
+            data = r.json()
+            hits = data.get('hits', {}).get('hits', [])
             logger.info(f"Found {len(hits)} filings for: {kw}")
             
-            for h in hits[:10]:
+            for h in hits[:5]:  # Limit to 5 per keyword to avoid too many
                 try:
                     src = h.get('_source', {})
-                    entity_name = src.get('entity_name', '')
-                    period = src.get('period_of_report', '')
                     
-                    if entity_name:
+                    # Extract fields from SEC response
+                    entity_name = src.get('entity_name', '')
+                    form_type = src.get('form_type', '')
+                    filing_date = src.get('filing_date', '')
+                    
+                    if entity_name and form_type:
+                        # Create a meaningful title
+                        title = f"{entity_name} - {form_type}"
+                        description = f"Keyword: {kw} | Filing: {form_type}"
+                        
+                        # Extract URL if available
+                        url_val = src.get('url', '')
+                        
                         conn.execute("""
                             INSERT OR IGNORE INTO signals 
                             (source, type, title, description, url, score, created_at)
@@ -53,17 +64,18 @@ def scrape_sec() -> int:
                         """, (
                             'sec_edgar',
                             'filing',
-                            entity_name,
-                            f"Keyword: {kw} | Period: {period}",
-                            src.get('file_date', ''),
-                            5,
+                            title[:100],
+                            description[:200],
+                            url_val,
+                            4,  # Lower score for SEC filings
                         ))
                         saved += 1
+                        logger.debug(f"Saved SEC signal: {title}")
                 except Exception as e:
                     logger.debug(f"Error parsing SEC filing: {e}")
                     continue
             
-            time.sleep(3)
+            time.sleep(2)  # Rate limiting
         
         except Exception as e:
             logger.error(f"SEC error for '{kw}': {e}")
