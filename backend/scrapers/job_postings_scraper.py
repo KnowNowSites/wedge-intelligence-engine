@@ -5,15 +5,21 @@ Signals high volume of manual job titles = industry scaling manually instead of 
 """
 
 import re
+import sqlite3
+import os
+import time
 from datetime import datetime
-from database import get_db_connection
-from utils import safe_scraper_execution, retry_with_backoff, randomized_delay, get_logger
+import logging
 
-logger = get_logger("job_postings_scraper")
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("job_postings_scraper")
+
+DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '..', 'wie.db')
+
+def get_db_connection():
+    return sqlite3.connect(DB_PATH)
 
 
-@safe_scraper_execution("job_postings_scraper")
-@retry_with_backoff(max_retries=3, base_delay=2.0)
 def job_postings_scraper() -> list[dict]:
     """
     Scrape job postings from RemoteOK API for market signals.
@@ -82,7 +88,7 @@ def job_postings_scraper() -> list[dict]:
                 logger.debug(f"Error parsing RemoteOK job: {e}")
                 continue
         
-        randomized_delay(1, 2)
+        time.sleep(1)
     
     except Exception as e:
         logger.error(f"Job Postings scraper error: {e}")
@@ -93,7 +99,7 @@ def job_postings_scraper() -> list[dict]:
 
 
 def save_job_postings(postings: list[dict]) -> int:
-    """Save job postings to database."""
+    """Save job postings to signals table."""
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -101,18 +107,16 @@ def save_job_postings(postings: list[dict]) -> int:
     for posting in postings:
         try:
             cursor.execute("""
-                INSERT OR IGNORE INTO job_postings 
-                (job_title, company_name, inferred_industry, posting_date, 
-                 job_description_snippet, source_url, date_scraped)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT OR IGNORE INTO signals 
+                (source, type, title, description, url, score, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
             """, (
+                'job_postings',
+                'job_posting',
                 posting.get("job_title"),
-                posting.get("company_name"),
-                posting.get("inferred_industry"),
-                posting.get("posting_date"),
                 posting.get("job_description_snippet"),
                 posting.get("source_url"),
-                datetime.now(),
+                0,  # score
             ))
             saved += 1
         except Exception as e:
@@ -120,7 +124,7 @@ def save_job_postings(postings: list[dict]) -> int:
     
     conn.commit()
     conn.close()
-    logger.info(f"Saved {saved}/{len(postings)} job postings to database")
+    logger.info(f"Saved {saved}/{len(postings)} job postings to signals table")
     return saved
 
 

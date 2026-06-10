@@ -1,104 +1,101 @@
 """
-Y Combinator Scraper - Generates realistic YC company data for testing.
-Uses known YC company names and verticals to create diverse signals.
+Y Combinator Scraper - Fetches YC company mentions from HN Algolia API.
+Uses https://hn.algolia.com/api/v1/search - no authentication required.
 """
 
-from datetime import datetime
-from database import get_db_connection
-from utils import safe_scraper_execution, retry_with_backoff, randomized_delay, get_logger
+import requests
+import sqlite3
+import os
+import time
+import logging
 
-logger = get_logger("yc_scraper")
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("yc_scraper")
 
-# Real YC companies across different batches and verticals
-YC_COMPANIES = [
-    {"name": "Stripe", "batch": "S10", "vertical": "Fintech", "description": "Online payment processing platform"},
-    {"name": "Airbnb", "batch": "S09", "vertical": "Travel", "description": "Peer-to-peer accommodation marketplace"},
-    {"name": "Dropbox", "batch": "S07", "vertical": "Cloud Storage", "description": "File hosting and synchronization"},
-    {"name": "Twitch", "batch": "S11", "vertical": "Gaming", "description": "Live streaming platform for gamers"},
-    {"name": "Instacart", "batch": "S12", "vertical": "Logistics", "description": "Grocery delivery service"},
-    {"name": "Brex", "batch": "S14", "vertical": "Fintech", "description": "Corporate credit card and financial services"},
-    {"name": "Guidepoint", "batch": "S13", "vertical": "Enterprise", "description": "Expert network platform"},
-    {"name": "Notion", "batch": "S16", "vertical": "Productivity", "description": "All-in-one workspace for notes and databases"},
-    {"name": "Figma", "batch": "S15", "vertical": "Design", "description": "Collaborative design and prototyping tool"},
-    {"name": "Canva", "batch": "S13", "vertical": "Design", "description": "Graphic design platform for non-designers"},
-    {"name": "Slack", "batch": "S11", "vertical": "Communication", "description": "Team messaging and collaboration platform"},
-    {"name": "Uber", "batch": "S09", "vertical": "Transportation", "description": "Ride-sharing and delivery platform"},
-    {"name": "Doordash", "batch": "S13", "vertical": "Food Delivery", "description": "On-demand food delivery"},
-    {"name": "Amplitude", "batch": "S12", "vertical": "Analytics", "description": "Product analytics platform"},
-    {"name": "Plaid", "batch": "S13", "vertical": "Fintech", "description": "Financial data connectivity API"},
-    {"name": "Gusto", "batch": "S12", "vertical": "HR", "description": "Payroll and HR software"},
-    {"name": "Mixpanel", "batch": "S09", "vertical": "Analytics", "description": "Mobile analytics platform"},
-    {"name": "Zendesk", "batch": "S08", "vertical": "Customer Support", "description": "Customer service software"},
-    {"name": "Segment", "batch": "S14", "vertical": "Data", "description": "Customer data platform"},
-    {"name": "Intercom", "batch": "S11", "vertical": "Communication", "description": "Customer communication platform"},
-]
+DB_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '..', 'wie.db')
 
 
-@safe_scraper_execution("yc_scraper")
-@retry_with_backoff(max_retries=3, base_delay=2.0)
 def yc_scraper() -> list[dict]:
     """
-    Generate realistic Y Combinator company data for testing.
+    Fetch Y Combinator company mentions from HN Algolia API.
     
     Returns:
-        List of dicts with: company_name, batch, description, vertical, status, url
+        List of dicts with signal data
     """
-    logger.info("Starting Y Combinator scraper...")
+    logger.info("Starting Y Combinator scraper from HN Algolia API...")
     
     results = []
     
     try:
-        for company in YC_COMPANIES:
-            results.append({
-                "company_name": company["name"],
-                "batch": company["batch"],
-                "description": company["description"],
-                "vertical": company["vertical"],
-                "status": "active",
-                "url": f"https://www.ycombinator.com/companies/{company['name'].lower()}",
-            })
+        # Query HN Algolia API for YC-related posts
+        url = "https://hn.algolia.com/api/v1/search?query=YC+W24+OR+YC+S24+OR+YC+W25+OR+YC+S25&tags=story&hitsPerPage=100"
         
-        randomized_delay(1, 2)
+        response = requests.get(url, timeout=15)
+        response.raise_for_status()
+        
+        hits = response.json().get('hits', [])
+        logger.info(f"Found {len(hits)} YC-related posts from HN Algolia")
+        
+        for h in hits:
+            try:
+                title = h.get('title', '')
+                story_text = h.get('story_text') or h.get('comment_text', '')
+                url_val = h.get('url', '')
+                score = h.get('points', 0)
+                
+                if title:
+                    results.append({
+                        'source': 'yc',
+                        'type': 'company_launch',
+                        'title': title,
+                        'description': story_text,
+                        'url': url_val,
+                        'score': score,
+                    })
+            except Exception as e:
+                logger.debug(f"Error parsing YC post: {e}")
+                continue
+        
+        time.sleep(1)
     
     except Exception as e:
         logger.error(f"Y Combinator scraper error: {e}")
         return []
     
-    logger.info(f"Y Combinator scraper completed: {len(results)} companies found")
+    logger.info(f"Y Combinator scraper completed: {len(results)} posts found")
     return results
 
 
-def save_yc_companies(companies: list[dict]) -> int:
-    """Save Y Combinator companies to database."""
-    conn = get_db_connection()
+def save_yc_signals(signals: list[dict]) -> int:
+    """Save YC signals to signals table."""
+    conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
     saved = 0
-    for company in companies:
+    for signal in signals:
         try:
             cursor.execute("""
-                INSERT OR IGNORE INTO yc_companies 
-                (company_name, batch, description, vertical, status, url, date_scraped)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT OR IGNORE INTO signals 
+                (source, type, title, description, url, score, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
             """, (
-                company.get("company_name"),
-                company.get("batch"),
-                company.get("description"),
-                company.get("vertical"),
-                company.get("status"),
-                company.get("url"),
-                datetime.now(),
+                signal.get('source'),
+                signal.get('type'),
+                signal.get('title'),
+                signal.get('description'),
+                signal.get('url'),
+                signal.get('score'),
             ))
             saved += 1
         except Exception as e:
-            logger.error(f"Failed to save YC company: {e}")
+            logger.error(f"Failed to save YC signal: {e}")
     
     conn.commit()
     conn.close()
-    logger.info(f"Saved {saved}/{len(companies)} YC companies to database")
+    logger.info(f"Saved {saved}/{len(signals)} YC signals to database")
     return saved
 
 
 if __name__ == "__main__":
-    companies = yc_scraper()
-    save_yc_companies(companies)
+    signals = yc_scraper()
+    save_yc_signals(signals)

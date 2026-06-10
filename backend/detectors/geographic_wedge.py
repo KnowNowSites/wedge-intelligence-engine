@@ -25,7 +25,8 @@ def detect_geographic_wedge():
             "SELECT * FROM signals WHERE source IN ('hackernews', 'producthunt')"
         ).fetchall()
 
-        for signal in signals:
+        for row in signals:
+            signal = dict(row)
             text = ' '.join(filter(None, [
                 signal['title'] if 'title' in signal.keys() else '',
                 signal['description'] if 'description' in signal.keys() else '',
@@ -37,13 +38,13 @@ def detect_geographic_wedge():
                     'detector_source': 'geographic_wedge',
                     'wedge_name': f"[NEEDS REVIEW] {signal['source'].upper()}: {signal['title'][:80]}",
                     'pain_score': 5.0,
-                    'spend_potential': 6.0,
-                    'growth_rate': 7.0,
-                    'expandability': 8.0,
-                    'distribution_score': 5.0,
-                    'competition_score': 4.0,
-                    'capital_required': 4.0,
-                    'regulatory_friction': 3.0,
+                    'spend_potential': 5.0,
+                    'growth_rate': 5.0,
+                    'expandability': 5.0,
+                    'distribution_score': min(10.0, 3.0 + (float(signal.get("score") or 0) / 20.0)),
+                    'competition_score': 5.0,
+                    'capital_required': 5.0,
+                    'regulatory_friction': 5.0,
                     'evidence': json.dumps([{
                         'source': signal['source'],
                         'url': signal['url'] if 'url' in signal.keys() else '',

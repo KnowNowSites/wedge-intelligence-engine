@@ -29,7 +29,8 @@ def detect_pain_signals():
             "SELECT * FROM signals WHERE source IN ('hackernews', 'reddit', 'app_store', 'play_store')"
         ).fetchall()
 
-        for signal in signals:
+        for row in signals:
+            signal = dict(row)
             text = ' '.join(filter(None, [
                 signal['title'] if 'title' in signal.keys() else '',
                 signal['description'] if 'description' in signal.keys() else '',
@@ -37,17 +38,21 @@ def detect_pain_signals():
 
             matched = [kw for kw in PAIN_KEYWORDS if kw in text]
             if len(matched) >= 1 or 'ask hn' in text:
+                pain_score = min(10.0, 2.0 + len(matched) * 1.5)
+                raw_score = float(signal.get('score') or 0)
+                distribution_score = min(10.0, 3.0 + (raw_score / 20.0))
+                
                 candidates.append({
                     'detector_source': 'pain_signal',
                     'wedge_name': signal['title'][:100] if 'title' in signal.keys() else 'Unknown',
-                    'pain_score': min(10.0, 5.0 + len(matched) * 1.0),
-                    'spend_potential': 6.0,
-                    'growth_rate': 6.0,
-                    'expandability': 6.0,
-                    'distribution_score': 6.0,
-                    'competition_score': 4.0,
-                    'capital_required': 3.0,
-                    'regulatory_friction': 2.0,
+                    'pain_score': pain_score,
+                    'spend_potential': 5.0,
+                    'growth_rate': 5.0,
+                    'expandability': 5.0,
+                    'distribution_score': distribution_score,
+                    'competition_score': 5.0,
+                    'capital_required': 5.0,
+                    'regulatory_friction': 5.0,
                     'evidence': json.dumps([{
                         'source': signal['source'],
                         'url': signal['url'] if 'url' in signal.keys() else '',
