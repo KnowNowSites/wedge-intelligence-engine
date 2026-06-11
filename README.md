@@ -63,11 +63,12 @@ A full-stack market research tool that identifies profitable business wedges by 
 ```
 wie/
 ├── backend/
-│   ├── api_server.py           # Express.js backend (Node.js)
 │   ├── database.py             # SQLite schema and initialization
 │   ├── config.py               # Configuration loader
 │   ├── utils.py                # Shared utilities (logging, retries, delays)
 │   ├── scoring.py              # Wedge scoring engine
+│   ├── run_detectors.py        # Runs all 7 detectors in sequence
+│   ├── run_scheduler.py        # Standalone scheduler entry point
 │   ├── scrapers/
 │   │   ├── reddit_scraper.py
 │   │   ├── google_trends_scraper.py
@@ -79,8 +80,8 @@ wie/
 │   │   ├── hackernews_scraper.py
 │   │   ├── job_postings_scraper.py
 │   │   ├── openvc_scraper.py
-│   │   ├── amazon_reviews_scraper.py    # TODO: Stub
-│   │   └── g2_scraper.py                # TODO: Stub
+│   │   ├── amazon_reviews_scraper.py    # TODO: Stub (requires residential proxies)
+│   │   └── g2_scraper.py                # TODO: Stub (requires premium solver infra)
 │   ├── detectors/
 │   │   ├── pain_signal.py
 │   │   ├── incumbent_weakness.py
@@ -89,22 +90,21 @@ wie/
 │   │   ├── regulation_change.py
 │   │   ├── margin_expansion.py
 │   │   └── geographic_wedge.py
-│   ├── scheduler.py            # APScheduler setup
-│   └── tests/
-│       └── test_scrapers.py
-├── client/
-│   ├── src/
-│   │   ├── pages/
-│   │   │   ├── Dashboard.jsx
-│   │   │   ├── WedgeDetail.jsx
-│   │   │   ├── Explorer.jsx
-│   │   │   └── Watchlist.jsx
-│   │   ├── components/
-│   │   ├── App.jsx
-│   │   └── main.jsx
-│   └── package.json
-├── data/
-│   └── wie.db                  # SQLite database (created on first run)
+│   └── scheduler.py            # APScheduler configuration
+├── server/                     # Express.js + tRPC backend
+│   └── routers/
+│       ├── wedges.ts           # Wedge profile queries (SQLite)
+│       ├── scrapers.ts         # Scraper trigger endpoints
+│       └── watchlist.ts        # Watchlist CRUD
+├── client/                     # React frontend
+│   └── src/
+│       ├── pages/
+│       │   ├── Dashboard.tsx
+│       │   ├── WedgeDetail.tsx
+│       │   ├── Explorer.tsx
+│       │   └── Watchlist.tsx
+│       └── components/
+├── wie.db                      # SQLite database (created on first run, git-ignored)
 ├── logs/
 │   ├── scraper.log
 │   └── scraper_errors.log
@@ -118,36 +118,27 @@ wie/
 
 ### Database Schema
 
-**11 Tables:**
-1. `reddit_posts` - Reddit discussions with pain signals
-2. `hn_posts` - Hacker News threads and comments
-3. `app_store_reviews` - Apple App Store 1-2 star reviews
-4. `play_store_reviews` - Google Play Store 1-2 star reviews
-5. `google_trends` - Rising keywords and breakout trends
-6. `producthunt_launches` - Product Hunt launches with upvotes
-7. `yc_companies` - Y Combinator companies by batch and vertical
-8. `sec_filings` - SEC EDGAR filings with regulatory signals
-9. `job_postings` - Job postings indicating manual processes
-10. `openvc_companies` - Startup funding data by vertical
-11. `wedge_candidates` - Raw detector outputs (scores before filtering)
-12. `wedge_profiles` - Final profiles for scores > 15.0
-13. `watchlist` - User-saved wedges with notes and status
-14. `scraper_metadata` - Last run times and error tracking
+**Key Tables:**
+1. `signals` — Unified signal store for all scrapers (source, title, description, url, score)
+2. `wedge_candidates` — Raw detector outputs with scoring dimensions
+3. `wedge_profiles` — Final profiles for scores > 30.0
+4. `watchlist` — User-saved wedges with notes and status
+5. `scraper_metadata` — Last run times and error tracking
 
 ### Data Flow
 
 ```
 Scrapers (9 modules)
     ↓
-SQLite Database (raw signals)
+signals table (unified SQLite store)
     ↓
-Detectors (7 modules)
+Detectors (7 modules, query signals table)
     ↓
-Wedge Candidates Table
+wedge_candidates table
     ↓
-Scoring Engine (formula: pain × spend × growth × expandability × distribution / competition × capital × regulatory)
+Scoring Engine (normalized 0-100 scale)
     ↓
-Wedge Profiles (scores > 15.0)
+wedge_profiles (scores > 30.0)
     ↓
 React Dashboard (filter, sort, search, save)
 ```
@@ -198,7 +189,7 @@ React Dashboard (filter, sort, search, save)
 
 Edit `.env` to customize:
 - **Scraper intervals** (in hours): `REDDIT_INTERVAL=24`, etc.
-- **Wedge score threshold**: `WEDGE_SCORE_THRESHOLD=15.0`
+- **Wedge score threshold**: `WEDGE_SCORE_THRESHOLD=30.0`
 - **Logging level**: `LOG_LEVEL=INFO`
 - **Feature flags**: `SCHEDULER_ENABLED=true`, etc.
 
@@ -226,7 +217,7 @@ make dev
 ### Dashboard Views
 
 #### 1. Main Dashboard (`/`)
-- **Top wedges** ranked by score
+- **Top wedges** ranked by score (0–100 scale)
 - **Filter bar** by vertical, business model, capital, distribution, complexity
 - **Sort options** by score, speed to $10k MRR, EV ceiling, capital, complexity
 - **Global search** across all wedge profiles
@@ -279,11 +270,15 @@ make dev
 ## Scoring Formula
 
 ```
-numerator = pain_score × spend_potential × growth_rate × expandability × distribution_score
-denominator = competition_score × capital_required × regulatory_friction
-wedge_score = numerator / denominator
+# All inputs normalized to 0–1 before multiplying
+numerator   = pain × spend × growth × expandability × distribution
+denominator = competition × capital × regulatory_friction
+raw_score   = numerator / denominator
 
-If wedge_score > 15.0:
+# Log-normalized to 0–100 scale
+wedge_score = (log10(raw_score) + 5) × 10
+
+If wedge_score > 30.0:
   - Auto-generate full profile
   - Apply 5 rejection filters
   - Store in wedge_profiles table
@@ -307,24 +302,38 @@ A wedge is rejected if 2+ of these apply:
 make test
 ```
 
+### Manually Running Scrapers
+```bash
+# Run a single scraper
+python3 backend/scrapers/hackernews_scraper.py
+
+# Run all detectors after scraping
+python3 backend/run_detectors.py
+
+# Check database state
+python3 -c "
+import sqlite3
+c = sqlite3.connect('wie.db')
+for t in ['signals', 'wedge_candidates', 'wedge_profiles']:
+    print(t, c.execute(f'SELECT COUNT(*) FROM {t}').fetchone()[0])
+"
+```
+
 ### Adding a New Scraper
 
 1. Create `backend/scrapers/my_scraper.py`
-2. Implement `my_scraper()` function with `@safe_scraper_execution("my_scraper")` decorator
-3. Use `@retry_with_backoff()` for API calls
-4. Use `randomized_delay()` between requests
-5. Return list of dicts with required fields
-6. Add to `backend/scrapers/__init__.py`
-7. Register in `scheduler.py`
+2. Save results to `signals` table with appropriate `source` tag
+3. Use randomized delays (2–5 seconds) between requests
+4. Add to `backend/scrapers/__init__.py`
+5. Register in `scheduler.py`
 
 ### Adding a New Detector
 
 1. Create `backend/detectors/my_detector.py`
-2. Implement `detect_my_signals()` function
-3. Query relevant tables from `database.py`
-4. Return list of wedge candidates with scoring dimensions
-5. Add to `backend/detectors/__init__.py`
-6. Register in `scheduler.py` to run after each scraper
+2. Query the `signals` table filtered by relevant `source` values
+3. Return list of wedge candidates with scoring dimensions
+4. Add to `backend/detectors/__init__.py`
+5. Register in `run_detectors.py`
 
 ---
 
@@ -333,28 +342,24 @@ make test
 ### Database Issues
 ```bash
 # Reset database
-rm data/wie.db
+rm wie.db
 make init-db
 ```
 
 ### Scraper Failures
-Check logs:
 ```bash
 tail -f logs/scraper_errors.log
 ```
 
 ### Port Already in Use
 ```bash
-# Change ports in .env or docker-compose.yml
-# Or kill existing processes
-lsof -i :3000  # Frontend
-lsof -i :8000  # Backend
+# Kill existing process on port 3000
+lsof -i :3000
 ```
 
 ### Missing Credentials
 ```bash
-# Validate configuration
-python -c "from backend.config import Config; Config.validate()"
+python3 -c "from backend.config import Config; Config.validate()"
 ```
 
 ---
@@ -363,17 +368,17 @@ python -c "from backend.config import Config; Config.validate()"
 
 - ✅ Zero paid APIs required (all free tier or open source)
 - ✅ No LinkedIn scraping (legal risk)
-- ✅ No Crunchbase scraping (IP burn)
-- ✅ Amazon Reviews and G2 are TODO stubs (expensive residential proxies)
-- ✅ All scrapers use 2-5 second randomized delays
+- ✅ No Crunchbase scraping (IP burn, no free API since 2025)
+- ✅ Amazon Reviews and G2 are TODO stubs (require expensive infrastructure)
+- ✅ All scrapers use 2–5 second randomized delays
 - ✅ One scraper failure never crashes the pipeline
-- ✅ App runs fully locally with SQLite
+- ✅ App runs fully locally — no external cloud dependency
 
 ---
 
 ## Performance Notes
 
-- **First run:** ~5-10 minutes to populate all tables (depends on network)
+- **First run:** ~5–10 minutes to populate signals table (network dependent)
 - **Detector runs:** ~30 seconds to process all signals
 - **Scoring:** <1 second for all candidates
 - **Dashboard load:** <500ms for filtered results
@@ -382,6 +387,7 @@ python -c "from backend.config import Config; Config.validate()"
 
 ## Future Enhancements
 
+- [ ] Claude API integration for narrative wedge synthesis
 - [ ] Machine learning for pain signal classification
 - [ ] Real-time signal streaming via WebSocket
 - [ ] Competitor tracking and alerts
@@ -389,7 +395,6 @@ python -c "from backend.config import Config; Config.validate()"
 - [ ] Multi-user support with authentication
 - [ ] Advanced NLP for evidence extraction
 - [ ] Market size estimation
-- [ ] Founder network analysis
 
 ---
 
@@ -404,7 +409,7 @@ MIT
 For issues or questions:
 1. Check the logs: `logs/scraper_errors.log`
 2. Review the configuration: `.env`
-3. Validate credentials: `python -c "from backend.config import Config; Config.validate()"`
+3. Validate credentials: `python3 -c "from backend.config import Config; Config.validate()"`
 4. Open an issue on GitHub
 
 ---
