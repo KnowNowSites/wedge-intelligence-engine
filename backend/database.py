@@ -23,7 +23,8 @@ def init_database():
     conn = get_db_connection()
     cursor = conn.cursor()
 
-    # Reddit posts table
+    # --- Legacy individual tables (kept for backwards compat, scrapers now write to signals) ---
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS reddit_posts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -39,10 +40,7 @@ def init_database():
             UNIQUE(subreddit, post_title, comment_text)
         )
     """)
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_reddit_subreddit ON reddit_posts(subreddit)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_reddit_date ON reddit_posts(date_scraped)")
 
-    # Hacker News posts table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS hn_posts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -58,10 +56,7 @@ def init_database():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_hn_date ON hn_posts(date_posted)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_hn_type ON hn_posts(thread_type)")
 
-    # App Store reviews table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS app_store_reviews (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -76,10 +71,7 @@ def init_database():
             UNIQUE(app_name, platform, review_text)
         )
     """)
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_appstore_rating ON app_store_reviews(rating)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_appstore_category ON app_store_reviews(app_category)")
 
-    # Play Store reviews table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS play_store_reviews (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -93,10 +85,7 @@ def init_database():
             UNIQUE(app_name, review_text)
         )
     """)
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_playstore_rating ON play_store_reviews(rating)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_playstore_category ON play_store_reviews(app_category)")
 
-    # Google Trends table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS google_trends (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -109,10 +98,7 @@ def init_database():
             UNIQUE(keyword, category, date_pulled)
         )
     """)
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_trends_keyword ON google_trends(keyword)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_trends_breakout ON google_trends(is_breakout)")
 
-    # Product Hunt launches table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS producthunt_launches (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -128,10 +114,7 @@ def init_database():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_ph_upvotes ON producthunt_launches(upvotes)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_ph_launch_date ON producthunt_launches(launch_date)")
 
-    # Y Combinator companies table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS yc_companies (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -146,10 +129,7 @@ def init_database():
             UNIQUE(company_name, batch)
         )
     """)
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_yc_vertical ON yc_companies(vertical)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_yc_batch ON yc_companies(batch)")
 
-    # SEC EDGAR filings table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS sec_filings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -165,10 +145,7 @@ def init_database():
             UNIQUE(company_name, filing_type, filing_date, matched_keyword)
         )
     """)
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sec_company ON sec_filings(company_name)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_sec_keyword ON sec_filings(matched_keyword)")
 
-    # Job postings table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS job_postings (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -182,10 +159,7 @@ def init_database():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_jobs_industry ON job_postings(inferred_industry)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_jobs_title ON job_postings(job_title)")
 
-    # OpenVC companies table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS openvc_companies (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -200,10 +174,10 @@ def init_database():
             UNIQUE(company_name, vertical, country)
         )
     """)
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_openvc_vertical ON openvc_companies(vertical)")
-    cursor.execute("CREATE INDEX IF NOT EXISTS idx_openvc_stage ON openvc_companies(funding_stage)")
 
-    # Signals table (unified view of all scraped signals)
+    # --- Active tables ---
+
+    # Unified signals table (all scrapers write here)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS signals (
             id TEXT PRIMARY KEY,
@@ -222,7 +196,7 @@ def init_database():
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_signals_type ON signals(type)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_signals_date ON signals(scraped_at)")
 
-    # Wedge candidates table (output from detectors)
+    # Wedge candidates (detector output)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS wedge_candidates (
             id TEXT PRIMARY KEY,
@@ -243,7 +217,8 @@ def init_database():
     """)
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_wedge_detector ON wedge_candidates(detector_source)")
 
-    # Wedge profiles table (final profiles for scores > 15.0)
+    # Wedge profiles (final scored profiles > 30.0)
+    # UNIQUE(wedge_name, detector_source) prevents duplicate profiles on re-runs
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS wedge_profiles (
             id TEXT PRIMARY KEY,
@@ -256,28 +231,30 @@ def init_database():
             to_100k_mrr_months INTEGER,
             evidence_json TEXT,
             generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(wedge_name, detector_source)
         )
     """)
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_profile_score ON wedge_profiles(wedge_score)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_profile_detector ON wedge_profiles(detector_source)")
 
-    # Watchlist table (user-saved wedges)
+    # Watchlist (user-saved wedges)
+    # NOTE: column is wedge_id (not wedge_profile_id) - matches api_server.py
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS watchlist (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
-            wedge_profile_id INTEGER NOT NULL,
+            wedge_id TEXT NOT NULL,
             user_notes TEXT,
             status TEXT DEFAULT 'Researching',
             date_added TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (wedge_profile_id) REFERENCES wedge_profiles(id),
-            UNIQUE(wedge_profile_id)
+            FOREIGN KEY (wedge_id) REFERENCES wedge_profiles(id),
+            UNIQUE(wedge_id)
         )
     """)
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_watchlist_status ON watchlist(status)")
 
-    # Scraper metadata table (track last run times)
+    # Scraper metadata (run tracking)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS scraper_metadata (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -285,6 +262,7 @@ def init_database():
             last_run TIMESTAMP,
             last_successful_run TIMESTAMP,
             error_count INTEGER DEFAULT 0,
+            results_count INTEGER DEFAULT 0,
             last_error TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -292,8 +270,45 @@ def init_database():
     """)
 
     conn.commit()
+
+    # --- Migrations for existing databases ---
+    # Safe to run on any DB state; each is wrapped in try/except
+    _run_migrations(cursor, conn)
+
     conn.close()
     print(f"Database initialized at {DB_PATH}")
+
+
+def _run_migrations(cursor, conn):
+    """Apply schema migrations for databases initialized before this version."""
+
+    # Migration 1: add results_count to scraper_metadata if missing
+    try:
+        cursor.execute("ALTER TABLE scraper_metadata ADD COLUMN results_count INTEGER DEFAULT 0")
+        conn.commit()
+    except Exception:
+        pass  # Column already exists
+
+    # Migration 2: rename wedge_profile_id -> wedge_id in watchlist if old schema exists
+    # SQLite supports RENAME COLUMN since 3.25.0 (2018) - safe on all modern systems
+    try:
+        cursor.execute("ALTER TABLE watchlist RENAME COLUMN wedge_profile_id TO wedge_id")
+        conn.commit()
+    except Exception:
+        pass  # Column already renamed or doesn't exist
+
+    # Migration 3: add UNIQUE constraint to wedge_profiles
+    # Can't add constraints to existing tables in SQLite; recreate only if needed
+    try:
+        cursor.execute("SELECT wedge_name, detector_source FROM wedge_profiles LIMIT 1")
+        # Table exists — check if UNIQUE constraint is present by inspecting indexes
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='wedge_profiles' AND name='idx_profile_unique_wedge'")
+        if not cursor.fetchone():
+            # No unique index yet — add it (won't enforce retroactively but prevents future dupes)
+            cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_profile_unique_wedge ON wedge_profiles(wedge_name, detector_source)")
+            conn.commit()
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":
